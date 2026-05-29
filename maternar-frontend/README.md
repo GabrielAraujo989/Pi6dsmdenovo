@@ -1,330 +1,265 @@
-# Maternar Frontend
+# Maternar — Frontend
 
-Aplicativo Flutter do projeto Maternar, com foco em acompanhamento gestacional preventivo e jornada de cuidado para gestantes.
+Aplicativo Flutter do projeto Maternar. Acompanhamento gestacional preventivo com jornada de cuidado personalizada para gestantes, construído com Material 3 e integração completa com o backend NestJS.
 
-## Visao geral
+Desenvolvido como parte do Projeto Interdisciplinar do 6º semestre do curso de Desenvolvimento de Software Multiplataforma.
 
-O app foi construido com Flutter e Material 3, com interface mobile-first, identidade visual personalizada e navegacao por rotas para fluxos principais de onboarding, cadastro e acompanhamento. Integrado com backend NestJS para autenticacao, registro de usuarios e sincronizacao de perfil.
+---
 
-## Funcionalidades atuais
+## Funcionalidades Implementadas
 
-- Tela de boas-vindas com entrada para criacao de conta e acesso de usuaria ja cadastrada.
-- Fluxo de cadastro com validacoes de formulario completo.
-- Regras de senha com medidor de forca (minimo 8 caracteres, caractere especial, numero, maiusculas/minusculas).
-- Mascara de telefone em tempo real.
-- Consulta ViaCEP com autocomplete de endereco (logradouro, bairro, cidade/UF).
-- Toggle para preenchimento automatico ou manual por CEP.
-- Integracao com backend NestJS para registro, autenticacao JWT e perfil de usuario.
-- Navegacao para telas de questionario, resultados, registro diario e conteudo educativo.
-- Dashboard com dados sincronizados da API apos autenticacao.
+- Tela de boas-vindas com identidade visual do Maternar
+- Fluxo de cadastro com validações completas de formulário
+- Medidor de força de senha em tempo real (4 critérios visuais)
+- Máscara de telefone automática durante a digitação
+- Integração com ViaCEP: autocomplete de endereço por CEP (toggle automático/manual)
+- Autenticação JWT com persistência local de sessão
+- Dashboard sincronizado com backend após autenticação
+- Cálculo de semana gestacional e dias para o parto
+- Histórico de consultas pré-natais
+- Métricas de saúde (pressão, peso, glicemia)
+- Diário de sintomas com escala de humor
+- Artigos educativos categorizados
+- Central de notificações
+- Perfil editável com logout seguro
+
+---
 
 ## Stack
 
-- Flutter SDK 3.8+
-- Dart 3.8+
-- Material 3
-- google_fonts
-- http (cliente HTTP para chamadas API)
-- shared_preferences (persistencia local de sessao e token)
+| Tecnologia | Versão | Uso |
+|-----------|--------|-----|
+| Flutter | 3.8+ | Framework multiplataforma |
+| Dart | 3.8+ | Linguagem |
+| Material 3 | — | Design system |
+| google_fonts | ^6.2.1 | Tipografia (DM Sans, Playfair Display) |
+| http | ^1.2.2 | Requisições HTTP |
+| shared_preferences | ^2.3.2 | Persistência local |
+| flutter_lints | ^5.0.0 | Análise estática |
 
-## Estrutura principal
+---
 
-- `lib/main.dart`: ponto de entrada, composicao principal da interface e fluxos de UI.
-- `lib/backend_api.dart`: cliente HTTP para registro, autenticacao e consumo de `/users/profile`.
-- `lib/viacep_service.dart`: servico para consultar API publica ViaCEP e obter dados de endereco.
-- `lib/app_session.dart`: gerencia sessao autenticada, token JWT e dados de perfil local.
-- `lib/home_dashboard_data_source.dart`: fonte de dados para dashboard (API + fallback local).
-- `assets/images/`: imagens utilizadas no app.
-- `src/images/`: imagens complementares do projeto.
-- `test/widget_test.dart`: testes iniciais de widget.
+## Pré-requisitos
 
-## Requisitos
-
-- Flutter instalado e configurado no PATH (Flutter 3.8+).
-- Um dispositivo/emulador Android, iOS, Web ou Desktop disponivel.
-- Backend Maternar rodando em `http://localhost:3000` (ou configurar `API_BASE_URL`).
-- Docker instalado (para banco de dados PostgreSQL do backend).
-
-Para validar o ambiente Flutter:
+- Flutter SDK 3.8+ instalado e no PATH
+- Dispositivo, emulador Android/iOS ou browser disponível
+- Backend Maternar rodando (ver instruções abaixo)
 
 ```bash
+# Verificar ambiente Flutter
 flutter doctor
 ```
 
-## Como executar localmente
+---
+
+## Como Rodar Localmente
 
 ### 1. Preparar o Backend
 
-Clone e configure o repositorio backend:
+Clone e configure o backend Maternar:
 
 ```bash
 git clone https://github.com/guuisouza/maternar-backend.git
 cd maternar-backend
 git checkout dev
 npm install
-```
-
-Suba o banco de dados e aplique migrations:
-
-```bash
+cp .env.example .env  # editar .env com credenciais reais
 docker-compose up -d
 npx prisma migrate dev
 npx prisma generate
-```
-
-Inicie o servidor NestJS em modo desenvolvimento:
-
-```bash
 npm run start:dev
 ```
 
-A API estara disponivel em `http://localhost:3000`.
+A API estará em `http://localhost:3000`.
 
-### 2. Preparar o Frontend
-
-Na pasta do projeto, instale dependencias:
+### 2. Instalar dependências Flutter
 
 ```bash
 flutter pub get
 ```
 
-(Opcional) Se a API nao estiver em `localhost:3000`, atualize `API_BASE_URL` em `lib/backend_api.dart`.
-
-Liste os dispositivos disponiveis:
+### 3. Executar o app
 
 ```bash
+# Listar dispositivos disponíveis
 flutter devices
-```
 
-Rode o app no dispositivo desejado:
-
-```bash
-flutter run -d <device_id>
-```
-
-Exemplo (emulador Android):
-
-```bash
+# Executar no emulador Android (backend em 10.0.2.2:3000 por padrão)
 flutter run -d emulator-5554
+
+# Executar no browser
+flutter run -d chrome
+
+# Executar com URL de API personalizada
+flutter run --dart-define=API_BASE_URL=http://SEU_IP:3000
 ```
 
-## Comandos uteis
+---
 
-```bash
-flutter analyze        # Validacao estatica de codigo
-flutter test           # Testes unitarios
-flutter clean          # Limpar build cache
+## Estrutura de Arquivos
+
+```
+lib/
+├── main.dart                       # Ponto de entrada e todas as telas
+├── backend_api.dart                # Cliente HTTP tipado (registro, login, perfil)
+├── app_session.dart                # Sessão JWT e dados de perfil local
+├── home_dashboard_data_source.dart # Dados do Dashboard (Strategy Pattern)
+└── viacep_service.dart             # Consulta de CEP via ViaCEP
 ```
 
-## Rotas principais da aplicacao
+---
 
-- `/`: tela inicial (boas-vindas).
-- `/signup`: cadastro de usuaria com integracao ViaCEP.
-- `/login`: autenticacao com email e senha.
-- `/home`: area principal do app com dashboard sincronizado.
-- `/questionnaire`: questionario de triagem de saude.
-- `/processing`: processamento de perfil de risco.
-- `/safe-path`: resultado de risco controlado.
-- `/high-alert`: resultado de alerta elevado.
-- `/daily-log`: registro diario de sintomas.
-- `/education`: artigos educativos.
-- `/baby-week`: planejamento por semana de gestacao.
-- `/nutrition`: dicas nutricionais.
-- `/notifications`: central de notificacoes.
+## Rotas
 
-## Fluxo de autenticacao
+| Rota | Tela | Auth |
+|------|------|------|
+| `/` | WelcomeScreen | Não |
+| `/signup` | SignupScreen | Não |
+| `/login` | LoginScreen | Não |
+| `/home` | MainAppNavigation | Sim |
+| `/questionnaire` | QuestionnaireScreen | Sim |
+| `/processing` | ProfileProcessingScreen | Sim |
+| `/safe-path` | SafePathResultScreen | Sim |
+| `/high-alert` | HighAlertResultScreen | Sim |
+| `/daily-log` | DailyLogScreen | Sim |
+| `/education` | EducationalArticlesScreen | Sim |
+| `/baby-week` | BabyWeekPlannerScreen | Sim |
+| `/nutrition` | NutritionTipsScreen | Sim |
+| `/notifications` | NotificationCenterScreen | Sim |
 
-### Registro de usuario
+---
 
-**Endpoint:** `POST /users/register`
+## Fluxo de Autenticação
 
-**Campos obrigatorios:**
-- `name` (string, minimo 3 caracteres)
-- `email` (string, email valido)
-- `password` (string, minimo 8 caracteres com: caractere especial, numero, maiusculas e minusculas)
-- `birthDate` (ISO 8601, ex: `2026-09-20`)
+```
+Início do App → AppSession.init()
+    │
+    ├── Token salvo? ──► /home (dashboard sincronizado)
+    │
+    └── Sem token ────► /
+                           │
+                     ┌─────┴──────┐
+                     │            │
+                   /signup      /login
+                     │            │
+               POST /users    POST /auth/login
+               /register          │
+                     │        saveToken()
+                  login auto       │
+                     │        sync perfil
+                  saveToken()      │
+                     │            │
+                     └─────┬──────┘
+                           ▼
+                      /home (sem volta)
+```
 
-**Exemplo de requisicao:**
+---
 
-```json
+## API do Backend
+
+### Registro
+
+```
+POST /users/register
+Content-Type: application/json
+
 {
   "name": "Maria Silva",
-  "email": "maria.silva@example.com",
+  "email": "maria@exemplo.com",
   "password": "Abc!2345",
-  "birthDate": "2026-09-20"
-}
-```
-
-**Resposta de sucesso (201):**
-
-```json
-{
-  "message": "User created successfully"
+  "birthDate": "2026-09-20",
+  "zipCode": "01001000"
 }
 ```
 
 ### Login
 
-**Endpoint:** `POST /auth/login`
+```
+POST /auth/login
+Content-Type: application/json
 
-**Parametros:**
-- `email` (string)
-- `password` (string)
+{ "email": "maria@exemplo.com", "password": "Abc!2345" }
 
-**Exemplo:**
-
-```json
-{
-  "email": "maria.silva@example.com",
-  "password": "Abc!2345"
-}
+→ { "access_token": "eyJ...", "expiresIn": 60 }
 ```
 
-**Resposta de sucesso (200):**
-
-```json
-{
-  "access_token": "eyJhbGciOiJIUzI1NiIs...",
-  "expiresIn": 60
-}
-```
-
-### Perfil de usuario
-
-**Endpoint:** `GET /users/profile`
-
-**Headers:**
+### Perfil
 
 ```
+GET /users/profile
 Authorization: Bearer <access_token>
+
+→ { "id": "uuid", "name": "...", "email": "...", "birthDate": "...", ... }
 ```
 
-**Resposta de sucesso (200):**
-
-```json
-{
-  "id": "187a903a-2256-4b71-b76a-1d92d4c15b03",
-  "name": "Maria Silva",
-  "email": "maria.silva@example.com",
-  "birthDate": "2026-09-20T00:00:00.000Z",
-  "createdAt": "2026-04-29T01:50:48.740Z"
-}
-```
-
-## Integracao ViaCEP
-
-O app consulta a API publica ViaCEP para autocomplete de endereco:
-
-### Modo de uso
-
-1. **Preenchimento automatico (padrao):**
-   - Digite 8 digitos no campo CEP.
-   - A consulta eh feita automaticamente.
-   - Campos de logradouro, bairro e cidade sao preenchidos.
-
-2. **Modo manual:**
-   - Desative o toggle "Preenchimento automatico".
-   - Use o botao de busca (icone de lupa) para consultar manualmente.
-
-### Campos retornados
-
-- `logradouro`: rua, avenida, etc
-- `bairro`: bairro
-- `localidade`: cidade
-- `uf`: unidade federativa (UF)
-
-### Tratamento de erros
-
-- CEP invalido (nao 8 digitos) → validacao local
-- CEP nao encontrado → mensagem "CEP nao encontrado"
-- Timeout na consulta ViaCEP → mensagem "Tempo esgotado na consulta do ViaCEP"
-- Redes indisponiveis → fallback para entrada manual
+---
 
 ## Testes
 
-### Validacao de codigo
+```bash
+flutter analyze        # Análise estática de código
+flutter test           # Testes de widget
+flutter test --coverage  # Com relatório de cobertura
+```
+
+---
+
+## Build de Release
 
 ```bash
-flutter analyze
+# Android APK (debug)
+flutter build apk
+
+# Android APK (release com obfuscação — recomendado)
+flutter build apk --release --obfuscate --split-debug-info=build/symbols
+
+# iOS
+flutter build ios --release
+
+# Web
+flutter build web --release
 ```
 
-### Testes de widget
+---
 
-```bash
-flutter test
-```
+## Persistência Local
 
-### Teste de registro end-to-end (PowerShell)
+Dados armazenados via `SharedPreferences`:
 
-Com o backend rodando em `localhost:3000`:
+| Chave | Conteúdo |
+|-------|---------|
+| `auth_token` | JWT de acesso |
+| `profile_name` | Nome da gestante |
+| `profile_email` | E-mail |
+| `profile_due_date` | Data prevista do parto (ISO 8601) |
 
-```powershell
-$body = @{
-  name = 'Teste Usuario'
-  email = 'teste@example.com'
-  password = 'Teste@123'
-  birthDate = '2026-10-15'
-} | ConvertTo-Json
+> **Nota de segurança:** Em versão futura, tokens serão migrados para `flutter_secure_storage` para armazenamento criptografado. Ver [Especificações de Segurança](../Document/13-Especificacoes_de_Seguranca.md).
 
-Invoke-RestMethod -Uri 'http://localhost:3000/users/register' `
-  -Method Post -Body $body -ContentType 'application/json'
-```
+---
 
-### Teste de login e autenticacao
+## Documentação Complementar
 
-```powershell
-# 1. Login
-$loginBody = @{ 
-  email = 'teste@example.com'
-  password = 'Teste@123'
-} | ConvertTo-Json
+| Documento | Descrição |
+|-----------|-----------|
+| [Arquitetura Frontend](../Document/15-Arquitetura_Frontend_Flutter.md) | Camadas, telas, fluxos detalhados |
+| [Segurança](../Document/13-Especificacoes_de_Seguranca.md) | Vulnerabilidades e melhorias |
+| [UX e Tom de Voz](../Document/04-Guia_de_UX_e_Tom_de_Voz.md) | Identidade visual e linguagem |
+| [Fluxo de Telas](../Document/06-Fluxo_e_Telas_da_Aplicacao.md) | Jornadas e wireframes |
 
-$loginResponse = Invoke-RestMethod -Uri 'http://localhost:3000/auth/login' `
-  -Method Post -Body $loginBody -ContentType 'application/json'
+---
 
-$token = $loginResponse.access_token
+## Contribuição
 
-# 2. Acessar perfil com token
-$headers = @{ 'Authorization' = "Bearer $token" }
-$profile = Invoke-RestMethod -Uri 'http://localhost:3000/users/profile' `
-  -Method Get -Headers $headers
+1. Crie branch a partir de `dev`
+2. Garanta que `flutter analyze` passa sem erros
+3. Mantenha o contrato de API sincronizado com o repositório do backend
+4. Abra Pull Request com descrição clara das alterações
 
-Write-Host ($profile | ConvertTo-Json)
-```
+---
 
-## Persistencia local
+## Equipe
 
-Os dados abaixo sao armazenados localmente via `SharedPreferences`:
-
-- `auth_token`: JWT token da sessao autenticada
-- `profile_name`: nome do usuario
-- `profile_email`: email do usuario
-- `profile_due_date`: data prevista do parto (para calculo de semana de gestacao)
-
-Esses dados sao carregados na inicializacao do app (`AppSession.init()`) e sincronizados com o backend quando o token estiver valido.
-
-## Status do projeto
-
-Frontend em desenvolvimento ativo com:
-- ✅ Integracao completa com backend NestJS
-- ✅ Autenticacao JWT com tokens seguros
-- ✅ Consumo de API ViaCEP para endereco
-- ✅ Fluxos de registro, login e dashboard implementados e testados
-- ✅ Persistencia local de sessao
-
-Proximos passos:
-- Implementacao de questionarios de triagem com submissao para backend
-- Integracoes com servicos de IA para classificacao de risco
-- Sincronizacao de registros diarios
-
-## Contribuicao
-
-1. Crie uma branch a partir da `main` ou `dev` conforme o padrao do projeto.
-2. Faca commits pequenos e descritivos.
-3. Certifique-se de que `flutter analyze` passa sem erros.
-4. Mantenha o contrato com o backend (endpoints e DTOs) sincronizado com a branch `dev` do repositorio `maternar-backend`.
-5. Abra Pull Request com resumo claro das alteracoes.
-
-## Licenca
-
-Definir conforme a estrategia do projeto.
+- Gabriel Araujo de Pádua
+- Guilherme Dilio de Souza
+- Sheila Alves de Araujo

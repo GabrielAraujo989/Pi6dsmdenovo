@@ -1,68 +1,203 @@
-## Sobre o repositório
+# Maternar — Backend
 
-O **Maternar** é uma aplicação focada no cuidado integral com a gestante. Utilizando inteligência artificial (K-Means) alimentada por dados históricos do DATASUS para classificar o perfil de cuidado necessário de forma acolhedora. O app oferece dicas personalizadas, educação em saúde e monitoramento preventivo, transformando dados estatísticos em suporte real durante toda a gestação. Neste repositório se encontra o backend da aplicação, que irá lidar com a criação de conta, autenticação da gestante e será responsável por fazer a persistência de dados de formulários e todo o restante.
+API REST do projeto Maternar, responsável por autenticação, cadastro de gestantes e persistência de dados.
 
-## Como rodar o projeto localmente
+Desenvolvido com **NestJS 11**, **Prisma 7** e **PostgreSQL** como parte do Projeto Interdisciplinar do 6º semestre do curso de Desenvolvimento de Software Multiplataforma.
 
-Siga os passos abaixo para configurar o ambiente de desenvolvimento, subir a infraestrutura do banco de dados e iniciar a API.
+---
 
-### Pré-requisitos
+## Funcionalidades Implementadas
 
-Certifique-se de ter instalado em sua máquina:
+- Cadastro de gestantes com validação de formulário e enriquecimento geográfico via ViaCEP
+- Autenticação com JWT (login local com bcrypt)
+- Proteção de rotas com guard JWT e tratamento de token expirado
+- Endpoint de perfil autenticado
+- Integração tolerante a falhas com API pública ViaCEP
+- Tratamento de erros padronizado com envelope `{ error: { code, message } }`
+- Validação global de DTOs com `ValidationPipe` (whitelist + forbidNonWhitelisted)
 
-- [Node.js](https://nodejs.org/en/) (v22.12.0 ou superior)
+---
+
+## Stack
+
+| Tecnologia | Versão | Uso |
+|-----------|--------|-----|
+| NestJS | ^11.0.1 | Framework REST |
+| TypeScript | ^5.7.3 | Linguagem |
+| Prisma ORM | ^7.6.0 | Acesso ao banco de dados |
+| PostgreSQL | 15 | Banco de dados relacional |
+| bcrypt | ^6.0.0 | Hash de senhas |
+| passport-jwt | ^4.0.1 | Autenticação JWT |
+| class-validator | ^0.15.1 | Validação de DTOs |
+| Docker Compose | — | Banco de dados em desenvolvimento |
+
+---
+
+## Pré-requisitos
+
+- [Node.js](https://nodejs.org/) v22.12.0 ou superior
 - [Docker](https://www.docker.com/) e Docker Compose
 - [Git](https://git-scm.com/)
 
-### Passo a Passo
+---
 
-**1. Clone o repositório e acesse a pasta**
+## Como Rodar Localmente
+
+### 1. Clone o repositório
 
 ```bash
-git clone <https://github.com/guuisouza/maternar-backend>
+git clone https://github.com/guuisouza/maternar-backend
 cd maternar-backend
-```
-
-**2. Mude para a branch de desenvolvimento (`dev`)**
-
-```bash
 git checkout dev
 ```
 
-**3. Instale as dependências do projeto**
+### 2. Instale as dependências
 
 ```bash
 npm install
 ```
 
-**4. Configure as Variáveis de Ambiente**
-Crie um arquivo `.env` na raiz do projeto, pegue como base o arquivo .env.example na raiz do projeto e preencha com as chaves fundamentais para o banco e para a autenticação.
+### 3. Configure as variáveis de ambiente
 
-**5. Suba o Banco de Dados (Docker)**
-Certifique-se de que o aplicativo do Docker está aberto e rodando em sua máquina, e execute:
+Crie o arquivo `.env` a partir do template:
+
+```bash
+cp .env.example .env
+```
+
+Edite `.env` e preencha os valores:
+
+```env
+DATABASE_URL="postgresql://admin:SUA_SENHA_AQUI@localhost:5432/gestasus_db?schema=public"
+JWT_SECRET="sua_chave_secreta_minimo_32_caracteres"
+```
+
+> **Atenção de segurança:** nunca use a senha do `.env.example` em produção. Gere um secret JWT com `openssl rand -base64 32`.
+
+### 4. Suba o banco de dados
 
 ```bash
 docker-compose up -d
 ```
 
-> _Nota: A flag `-d` roda o container em segundo plano. O banco de dados PostgreSQL estará disponível na porta 5432._
+O PostgreSQL estará disponível na porta `5432`.
 
-**6. Configure o Banco de Dados (Prisma)**
-Como o container do Docker subiu "zerado", você precisa aplicar as tabelas (migrations) no banco e gerar o cliente do Prisma para o TypeScript reconhecer os tipos. Rode:
+### 5. Aplique as migrations e gere o cliente Prisma
 
 ```bash
-# Aplica as migrations existentes na pasta prisma/migrations no banco de dados
+# Aplica as migrations na pasta prisma/migrations/
 npx prisma migrate dev
 
-# Gera os artefatos do Prisma Client (Necessário devido à arquitetura Prisma 7+)
+# Gera os tipos TypeScript do Prisma Client
 npx prisma generate
 ```
 
-**7. Inicie a Aplicação**
-Com o banco rodando e o Prisma configurado, inicie o servidor NestJS em modo de desenvolvimento:
+### 6. Inicie o servidor
 
 ```bash
 npm run start:dev
 ```
 
-A API estará disponível e "escutando" as requisições (por padrão em `http://localhost:3000`).
+A API estará disponível em `http://localhost:3000`.
+
+---
+
+## Endpoints da API
+
+### Autenticação
+
+| Método | Endpoint | Descrição | Auth |
+|--------|----------|-----------|------|
+| POST | `/auth/login` | Autentica com e-mail e senha | Não |
+
+**Exemplo de login:**
+```bash
+curl -X POST http://localhost:3000/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"maria@exemplo.com","password":"Abc!2345"}'
+```
+
+### Usuários
+
+| Método | Endpoint | Descrição | Auth |
+|--------|----------|-----------|------|
+| POST | `/users/register` | Cria nova conta de gestante | Não |
+| GET | `/users/profile` | Retorna perfil da usuária autenticada | Bearer JWT |
+
+**Exemplo de cadastro:**
+```bash
+curl -X POST http://localhost:3000/users/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Maria Silva",
+    "email": "maria@exemplo.com",
+    "password": "Abc!2345",
+    "birthDate": "2026-09-20",
+    "zipCode": "01001000"
+  }'
+```
+
+**Envelope de erro padrão:**
+```json
+{
+  "error": {
+    "code": "INVALID_CREDENTIALS",
+    "message": "Credenciais inválidas."
+  }
+}
+```
+
+---
+
+## Estrutura do Projeto
+
+```
+src/
+├── app.module.ts           # Módulo raiz
+├── main.ts                 # Bootstrap (ValidationPipe, ExceptionFilter)
+├── auth/                   # Autenticação JWT
+├── users/                  # Cadastro e perfil de gestantes
+├── integrations/viacep/    # Integração com API ViaCEP
+├── database/               # Módulo Prisma
+└── common/                 # Exceções e filtros globais
+
+prisma/
+├── schema/
+│   ├── schema.prisma        # Configuração do datasource
+│   ├── user.prisma          # Model User
+│   └── location.prisma      # Model UserLocation
+└── migrations/              # Histórico de migrations
+```
+
+---
+
+## Testes
+
+```bash
+npm test              # Testes unitários
+npm run test:cov      # Cobertura de código
+npm run test:e2e      # Testes end-to-end
+npm run test:watch    # Modo watch
+```
+
+Cobertura atual: módulos `auth`, `users`, `viacep`, `common`.
+
+---
+
+## Documentação Complementar
+
+| Documento | Descrição |
+|-----------|-----------|
+| [Arquitetura Backend](../Document/14-Arquitetura_Backend_NestJS.md) | Módulos, endpoints, fluxo detalhado |
+| [Segurança](../Document/13-Especificacoes_de_Seguranca.md) | Vulnerabilidades identificadas e melhorias |
+| [Modelagem de Banco](../Document/11-Modelagem_de_Banco_de_Dados.md) | Schemas e relacionamentos |
+| [Integração ViaCEP](docs/12-Integracao_ViaCEP.md) | Comportamento da integração |
+| [Abordagem de Testes](docs/13-Abordagem_de_Testes.md) | Estratégia de testes |
+
+---
+
+## Equipe
+
+- Gabriel Araujo de Pádua
+- Guilherme Dilio de Souza
+- Sheila Alves de Araujo

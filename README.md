@@ -2,243 +2,189 @@
 
 Aplicativo móvel de acompanhamento pré-natal com classificação de perfil gestacional por Inteligência Artificial, desenvolvido com dados históricos do DATASUS.
 
-## Sobre o Projeto
-
-O **Maternar** utiliza um modelo K-Means (K=3) treinado com **378.969 gestantes** (DATASUS 2014–2016) para classificar o perfil de cuidado de cada gestante e fornecer orientações personalizadas em linguagem acolhedora — sem alarmismo.
-
-**Problema:** Gestantes em situação de vulnerabilidade não recebem orientação preventiva adequada durante a gestação.
-
-**Solução:** App Flutter que, a partir de dados simples (peso, altura, município), classifica o perfil e entrega dicas personalizadas de nutrição, consultas e exames.
+> **Projeto Interdisciplinar — 6º semestre · Desenvolvimento de Software Multiplataforma**
 
 ---
 
-## Perfis Identificados pelo Modelo
+## O Problema
 
-| Cluster | Nome Técnico | Nome no App | % da Base | Característica |
-|---------|-------------|-------------|-----------|----------------|
+Gestantes em situação de vulnerabilidade não recebem orientação preventiva adequada durante a gestação. A ausência de triagem personalizada e acessível amplia desigualdades em saúde materno-infantil.
+
+## A Solução
+
+O **Maternar** utiliza um modelo K-Means (K=3) treinado com **378.969 gestantes** (DATASUS 2014–2016) para classificar o perfil de cuidado de cada gestante e entregar orientações personalizadas em linguagem acolhedora — sem alarmismo, sem barreiras técnicas.
+
+---
+
+## Perfis Identificados pelo Modelo de IA
+
+| Cluster | Nome Técnico | Nome no App | % da Base | Característica Principal |
+|---------|-------------|-------------|-----------|--------------------------|
 | C0 | Obesidade Gestacional | **Cuidado Integral** | 27,3% | IMC pré-gestacional ≥ 31 |
 | C1 | Eutrofia / Baixo Peso | **Caminho Seguro** | 71,2% | Grupo majoritário do SUS |
-| C2 | Acesso Diferenciado | **Atenção Redobrada** | 1,5% | Município com alta infraestrutura hospitalar |
+| C2 | Acesso Diferenciado | **Atenção Redobrada** | 1,5% | Município com alta infraestrutura |
 
-**Métricas do modelo:** Silhouette=0,2873 · Calinski-Harabász=102.169 · ARI hold-out=0,999
+**Métricas do modelo:** Silhouette = 0,2873 · Calinski-Harabász = 102.169 · ARI hold-out = 0,999
 
 ---
 
-## Arquitetura
+## Arquitetura do Sistema
 
 ```
-App Flutter
-    │
-    │ HTTPS
-    ▼
-Backend NestJS          ←──── PostgreSQL (porta 5435)
-    │
-    │ RabbitMQ — fila: maternar.classificar
-    ▼
-Worker Flask (IA)
-    ├── RobustScaler → PCA (8 comp.) → KMeans K=3
-    └── PostgreSQL — features municipais (ml_maternar.municipio_features)
+┌─────────────────────────────────────────────────────────────┐
+│                     App Flutter (Maternar)                   │
+│  Cadastro · Login · Dashboard · Diário · Conteúdo Educativo  │
+└──────────────────────────────┬──────────────────────────────┘
+                               │ HTTPS / REST
+                               ▼
+┌─────────────────────────────────────────────────────────────┐
+│                   Backend NestJS (API)                        │
+│  Autenticação JWT · Cadastro de gestantes · Perfil           │
+│  Integração ViaCEP · Validação de DTOs                       │
+└──────────┬──────────────────────────────────┬───────────────┘
+           │ PostgreSQL (Prisma)              │ RabbitMQ
+           ▼                                  ▼
+┌──────────────────┐              ┌──────────────────────────┐
+│   PostgreSQL 15  │              │   Worker Flask (IA)       │
+│   Dados de       │              │   KMeans K=3 · PCA · Scaler│
+│   gestantes e    │◄─────────────│   Classificação de perfil │
+│   localizações   │              │   gestacional             │
+└──────────────────┘              └──────────────────────────┘
 ```
 
-Toda a infraestrutura (PostgreSQL + RabbitMQ + Worker) sobe via **Docker Compose** incluído na raiz do projeto.
+---
+
+## Repositórios e Componentes
+
+### `/maternar-backend/` — API NestJS
+Backend REST responsável por autenticação, cadastro e gestão de perfil.
+
+➜ [README do Backend](maternar-backend/README.md) · [Documentação Técnica](Document/14-Arquitetura_Backend_NestJS.md)
+
+**Stack:** NestJS 11 · Prisma 7 · PostgreSQL · TypeScript · JWT · bcrypt
+
+### `/maternar-frontend/` — App Flutter
+Aplicativo mobile com interface acolhedora para acompanhamento gestacional.
+
+➜ [README do Frontend](maternar-frontend/README.md) · [Documentação Técnica](Document/15-Arquitetura_Frontend_Flutter.md)
+
+**Stack:** Flutter 3.8+ · Dart 3.8+ · Material 3 · http · shared_preferences
+
+### `/ApiDatasus/` — Pipeline de Dados e Serviço de IA
+Pipeline KDD completo (download → pré-processamento → clustering → pós-processamento) e Worker Flask para inferência.
+
+➜ [README do Pipeline](ApiDatasus/README.md)
+
+**Stack:** Python 3.12 · scikit-learn · pandas · Flask · RabbitMQ · Docker
 
 ---
 
 ## Estrutura do Repositório
 
 ```
-├── docker-compose.yml            # Infraestrutura completa (postgres + rabbitmq + worker)
-├── ApiDatasus/                   # Pipeline de dados e serviço de IA
-│   ├── .env.example              # Template de variáveis de ambiente
-│   ├── flask_api/                # Serviço Flask — inferência + worker RabbitMQ
-│   │   ├── app.py                # HTTP endpoints (dev / health-check)
-│   │   ├── worker.py             # Consumidor RabbitMQ (produção)
-│   │   ├── classifier.py         # Motor de inferência K-Means
-│   │   ├── db.py                 # Consulta de features municipais (PostgreSQL)
-│   │   ├── config.py             # Configurações via variáveis de ambiente
-│   │   ├── models/               # Artefatos ML de produção (.pkl)
-│   │   ├── Dockerfile
-│   │   ├── requirements.txt
-│   │   └── .env.example          # Template de credenciais do serviço Flask
-│   ├── main.py                   # Download de dados DATASUS
-│   ├── db_loader.py              # Carga no PostgreSQL
-│   ├── preprocessing_maternar.py # Feature engineering (20 features)
-│   ├── gerar_notebook_research.py# Pesquisa KDD — 4 algoritmos × K=3 e K=4
-│   ├── pos_processamento_k3.py   # Validação hold-out + bootstrap + gráficos
-│   ├── KDD_Maternar.ipynb        # Notebook de clustering inicial
-│   ├── KDD_Maternar_Research.ipynb # Notebook de pesquisa comparativa
-│   ├── clustering_research_output/
-│   │   ├── graficos/             # 16 gráficos comparativos (4 modelos × K=3 e K=4)
-│   │   └── tabelas/              # CSVs de centroides e métricas
-│   └── pos_processamento_output/
-│       ├── relatorio_tecnico_k3.md
-│       ├── graficos/             # 15 gráficos de validação do modelo final
-│       └── *.csv                 # ANOVA, Qui-Quadrado, centroides, hold-out
+Maternar/
 │
-├── Document/                     # Documentação do projeto
-│   ├── 00-Apresentacao_Projeto.md
-│   ├── 01-Visao_do_Produto.md
-│   ├── 02-Especificacao_de_Requisitos.md
-│   ├── 03-Arquitetura_de_Dados_e_IA.md
-│   ├── 04-Guia_de_UX_e_Tom_de_Voz.md
-│   ├── 05-Dicionario_de_Dados_DATASUS.md
-│   ├── 06-Fluxo_e_Telas_da_Aplicacao.md
-│   ├── 07-Questionamento_ao_Stakeholder.md
-│   ├── 08-Especificacao_Tecnica_Backend.md
-│   ├── 09-Pipeline_de_Treinamento_e_Mineracao.md
-│   ├── 10-Entrega_Sprint_1.md
-│   ├── 11-Modelagem_de_Banco_de_Dados.md
-│   └── 12-Documentacao_Datasets_DATASUS.md
+├── README.md                         # Este arquivo
+├── docker-compose.yml                # Infraestrutura: PostgreSQL + RabbitMQ + Worker
 │
-└── src/                          # Backend NestJS (Sprint 2)
+├── maternar-backend/                 # API NestJS (Sprint 2+)
+│   ├── src/                          # Código-fonte TypeScript
+│   ├── prisma/                       # Schema e migrations
+│   ├── test/                         # Testes unitários e E2E
+│   ├── docs/                         # Documentação específica do backend
+│   ├── docker-compose.yml            # PostgreSQL para desenvolvimento local
+│   ├── .env.example                  # Template de variáveis de ambiente
+│   └── README.md                     # Guia de instalação e uso
+│
+├── maternar-frontend/                # App Flutter (Sprint 2+)
+│   ├── lib/                          # Código-fonte Dart
+│   ├── assets/                       # Imagens do app
+│   ├── test/                         # Testes de widget
+│   ├── android/ ios/ web/            # Plataformas nativas
+│   └── README.md                     # Guia de instalação e uso
+│
+├── ApiDatasus/                       # Pipeline de dados e IA
+│   ├── flask_api/                    # Serviço Flask de inferência
+│   ├── dados_datasus/                # Notebooks e dados brutos
+│   ├── clustering_output/            # Artefatos do modelo final
+│   ├── preprocess_output/            # Dados pré-processados
+│   ├── pos_processamento_output/     # Validação estatística
+│   ├── main.py                       # Download DATASUS
+│   ├── preprocessing_maternar.py     # Feature engineering
+│   ├── pos_processamento_k3.py       # Validação hold-out + bootstrap
+│   └── README.md                     # Guia do pipeline
+│
+└── Document/                         # Documentação do projeto
+    ├── 00-Apresentacao_Projeto.md
+    ├── 01-Visao_do_Produto.md
+    ├── 02-Especificacao_de_Requisitos.md
+    ├── 03-Arquitetura_de_Dados_e_IA.md
+    ├── 04-Guia_de_UX_e_Tom_de_Voz.md
+    ├── 05-Dicionario_de_Dados_DATASUS.md
+    ├── 06-Fluxo_e_Telas_da_Aplicacao.md
+    ├── 07-Questionamento_ao_Stakeholder.md
+    ├── 08-Especificacao_Tecnica_Backend.md
+    ├── 09-Pipeline_de_Treinamento_e_Mineracao.md
+    ├── 10-Entrega_Sprint_1.md
+    ├── 11-Modelagem_de_Banco_de_Dados.md
+    ├── 12-Documentacao_Datasets_DATASUS.md
+    ├── 13-Especificacoes_de_Seguranca.md   ← NOVO
+    ├── 14-Arquitetura_Backend_NestJS.md    ← NOVO
+    └── 15-Arquitetura_Frontend_Flutter.md  ← NOVO
 ```
 
 ---
 
-## Configuração do Ambiente
+## Início Rápido — Desenvolvimento
 
 ### Pré-requisitos
 
-- Python 3.12+
+- Node.js 22+
+- Flutter SDK 3.8+
 - Docker e Docker Compose
+- Python 3.12+ (apenas para re-treinar o modelo)
 
-### 1. Variáveis de Ambiente
-
-Crie o arquivo `.env` na raiz do projeto a partir do template:
+### 1. Backend
 
 ```bash
-cp ApiDatasus/.env.example .env
-# Edite .env com suas senhas antes de continuar
+cd maternar-backend
+cp .env.example .env         # Editar com credenciais reais
+npm install
+docker-compose up -d         # Sobe PostgreSQL
+npx prisma migrate dev       # Aplica migrations
+npx prisma generate          # Gera Prisma Client
+npm run start:dev            # API em http://localhost:3000
 ```
 
-O arquivo `.env` é lido pelo `docker-compose.yml` e pelos scripts Python do pipeline.
-
-### 2. Subir a Infraestrutura
+### 2. Frontend
 
 ```bash
-# PostgreSQL + RabbitMQ
-docker compose up -d postgres rabbitmq
-
-# Aguardar os health-checks passarem (~15 s) e verificar
-docker compose ps
+cd maternar-frontend
+flutter pub get
+flutter run -d emulator-5554 # Backend em 10.0.2.2:3000
 ```
 
-### 3. Pipeline de Dados (primeira execução)
+### 3. Serviço de IA (Worker Flask)
 
-> Execute apenas se precisar re-treinar o modelo. Os artefatos `.pkl` já estão versionados em `ApiDatasus/flask_api/models/`.
-
-```bash
-cd ApiDatasus
-python3.12 -m venv .venv && source .venv/bin/activate
-pip install -r flask_api/requirements.txt
-
-# 1. Download dos dados DATASUS (~60 GB — pode demorar horas)
-python main.py
-
-# 2. Carga no PostgreSQL
-python db_loader.py
-
-# 3. Feature engineering (gera gestante_para_cluster.parquet)
-python preprocessing_maternar.py
-
-# 4. Pesquisa KDD — compara 4 algoritmos (gera kmeans_k3.pkl)
-python gerar_notebook_research.py  # ou execute KDD_Maternar_Research.ipynb
-
-# 5. Pós-processamento — hold-out, bootstrap, gráficos
-python pos_processamento_k3.py
-
-# 6. Copiar modelos atualizados para o serviço Flask
-cp clustering_research_output/modelos/kmeans_k3.pkl flask_api/models/
-cp preprocess_output/scaler_maternar.pkl            flask_api/models/
-cp clustering_output/pca_maternar.pkl               flask_api/models/
-```
-
-### 4. Subir o Worker de IA
+> Os artefatos `.pkl` já estão versionados. Execute apenas se precisar re-treinar.
 
 ```bash
-# A partir da raiz do projeto
-docker compose up -d worker
+# Subir infraestrutura completa (Postgres + RabbitMQ + Worker)
+docker compose up -d
 
-# Acompanhar os logs de inicialização
+# Verificar logs do worker
 docker compose logs -f worker
 ```
 
-Saída esperada:
+Saída esperada do worker:
 ```
 maternar_worker | Modelos carregados — Scaler(9 feat) → PCA(8 comp) → KMeans(K=3)
-maternar_worker | Pool PostgreSQL iniciado
-maternar_worker | Conectado ao RabbitMQ (rabbitmq:5672)
 maternar_worker | Worker aguardando mensagens em 'maternar.classificar'...
-```
-
-### 5. Criar Tabela de Features Municipais
-
-Execute uma vez após o pipeline de dados:
-
-```bash
-docker compose exec postgres psql -U postgres -d maternar -c "
-CREATE SCHEMA IF NOT EXISTS ml_maternar;
-CREATE TABLE IF NOT EXISTS ml_maternar.municipio_features (
-    cod_municipio          VARCHAR(7)   NOT NULL,
-    ano                    SMALLINT     NOT NULL,
-    log_taxa_sifilis_gest  NUMERIC(8,4) NOT NULL DEFAULT 0,
-    cnes_hospitais         NUMERIC(6,2) NOT NULL DEFAULT 2,
-    cobertura_prenatal_log NUMERIC(8,4) NOT NULL DEFAULT 0,
-    tem_dado_sia           BOOLEAN      NOT NULL DEFAULT FALSE,
-    PRIMARY KEY (cod_municipio, ano)
-);"
 ```
 
 ---
 
 ## API de Inferência
-
-### Via RabbitMQ (produção)
-
-Publique na fila `maternar.classificar` com `correlation_id` e `reply_to`:
-
-```json
-{
-  "nu_peso": 72.0,
-  "nu_altura": 1.62,
-  "nu_imc_pre_gestacional": 24.1,
-  "raca_cor": 4,
-  "escolaridade": 3,
-  "cod_municipio": "350950"
-}
-```
-
-| Campo | Tipo | Obrigatório | Valores |
-|-------|------|-------------|---------|
-| `nu_peso` | float | Sim | 30–250 kg |
-| `nu_altura` | float | Sim | 1.30–2.15 m |
-| `nu_imc_pre_gestacional` | float | Sim | 10–80 |
-| `raca_cor` | int | Sim | 1=Branca 2=Preta 3=Amarela 4=Parda 5=Indígena |
-| `escolaridade` | int | Sim | 1–5 |
-| `cod_municipio` | string | Sim | IBGE 6 ou 7 dígitos |
-| `flag_anti_hiv` | int | Não | 0=não testada (default) / 1=testada |
-
-Resposta na fila `reply_to`:
-
-```json
-{
-  "cluster_id": 1,
-  "cluster_nome": "Eutrofia / Baixo Peso",
-  "cluster_nome_app": "Caminho Seguro",
-  "nivel_risco": "moderado",
-  "cor_hex": "#A8D8EA",
-  "recomendacoes": [
-    {"categoria": "nutricao",  "texto": "Orientação nutricional básica; monitorar ganho de peso"},
-    {"categoria": "consultas", "texto": "Garantir mínimo de 6 consultas de pré-natal (padrão SUS)"}
-  ],
-  "metricas": {
-    "nu_imc_calculado": 27.43,
-    "ganho_imc": 3.33,
-    "estado_nutricional": "sobrepeso",
-    "cnes_hospitais_municipio": 2.0
-  }
-}
-```
 
 ### Via HTTP (desenvolvimento)
 
@@ -246,18 +192,32 @@ Resposta na fila `reply_to`:
 # Health check
 curl http://localhost:5001/health
 
-# Classificar
+# Classificar perfil gestacional
 curl -X POST http://localhost:5001/classificar \
   -H "Content-Type: application/json" \
-  -d '{"nu_peso":72,"nu_altura":1.62,"nu_imc_pre_gestacional":24.1,"raca_cor":4,"escolaridade":3,"cod_municipio":"350950"}'
-
-# Listar definição dos 3 clusters
-curl http://localhost:5001/clusters
+  -d '{
+    "nu_peso": 72.0,
+    "nu_altura": 1.62,
+    "nu_imc_pre_gestacional": 24.1,
+    "raca_cor": 4,
+    "escolaridade": 3,
+    "cod_municipio": "350950"
+  }'
 ```
 
-> Para subir apenas o endpoint HTTP (sem worker): `docker compose run --rm -p 5001:5001 worker python app.py`
-
-Documentação completa da API: [`ApiDatasus/flask_api/README.md`](ApiDatasus/flask_api/README.md)
+**Resposta:**
+```json
+{
+  "cluster_id": 1,
+  "cluster_nome": "Eutrofia / Baixo Peso",
+  "cluster_nome_app": "Caminho Seguro",
+  "nivel_risco": "moderado",
+  "recomendacoes": [
+    { "categoria": "nutricao",  "texto": "Monitorar ganho de peso" },
+    { "categoria": "consultas", "texto": "Mínimo de 6 consultas pré-natais (SUS)" }
+  ]
+}
+```
 
 ---
 
@@ -265,44 +225,85 @@ Documentação completa da API: [`ApiDatasus/flask_api/README.md`](ApiDatasus/fl
 
 | Base | Conteúdo | Linkage |
 |------|----------|---------|
-| SISVAN | Peso, altura, IMC, raça, escolaridade por gestante | Individual |
-| SINAN | Taxa de sífilis gestacional e toxoplasmose | Município/ano |
+| SISVAN | Peso, altura, IMC, raça, escolaridade | Individual |
+| SINAN | Taxa de sífilis gestacional | Município/ano |
 | SIM | Taxa de mortalidade materna | Município/ano |
 | SIA | Cobertura de consultas pré-natal | Município/ano |
 | CNES | Quantidade de hospitais | Município/ano |
 
-Período: 2014–2016 · Municípios: 2.573 · Gestantes: 378.969
+**Período:** 2014–2016 · **Municípios:** 2.573 · **Gestantes:** 378.969
 
 ---
 
 ## Documentação
 
-| Documento | Descrição |
-|-----------|-----------|
-| [Apresentação do Projeto](Document/00-Apresentacao_Projeto.md) | Visão geral com gráficos do modelo |
-| [Visão do Produto](Document/01-Visao_do_Produto.md) | Problema, solução e KPIs |
-| [Arquitetura de Dados e IA](Document/03-Arquitetura_de_Dados_e_IA.md) | Pipeline e clusters K=3 |
-| [Especificação Técnica Backend](Document/08-Especificacao_Tecnica_Backend.md) | Flask + NestJS + RabbitMQ |
-| [Pipeline de Treinamento](Document/09-Pipeline_de_Treinamento_e_Mineracao.md) | KDD completo com métricas |
-| [Modelagem de Banco de Dados](Document/11-Modelagem_de_Banco_de_Dados.md) | Schemas PostgreSQL |
-| [Entrega Sprint 1](Document/10-Entrega_Sprint_1.md) | Resultados consolidados |
+| # | Documento | Descrição |
+|---|-----------|-----------|
+| 00 | [Apresentação do Projeto](Document/00-Apresentacao_Projeto.md) | Visão geral com métricas do modelo |
+| 01 | [Visão do Produto](Document/01-Visao_do_Produto.md) | Problema, solução, KPIs |
+| 02 | [Especificação de Requisitos](Document/02-Especificacao_de_Requisitos.md) | Requisitos funcionais e não-funcionais |
+| 03 | [Arquitetura de Dados e IA](Document/03-Arquitetura_de_Dados_e_IA.md) | Pipeline e clusters K=3 |
+| 04 | [Guia de UX e Tom de Voz](Document/04-Guia_de_UX_e_Tom_de_Voz.md) | Design system e linguagem |
+| 05 | [Dicionário de Dados DATASUS](Document/05-Dicionario_de_Dados_DATASUS.md) | Variáveis e codificações |
+| 06 | [Fluxo e Telas da Aplicação](Document/06-Fluxo_e_Telas_da_Aplicacao.md) | Jornadas e wireframes |
+| 07 | [Questionamento ao Stakeholder](Document/07-Questionamento_ao_Stakeholder.md) | Decisões de produto |
+| 08 | [Especificação Técnica Backend](Document/08-Especificacao_Tecnica_Backend.md) | Flask + NestJS + RabbitMQ |
+| 09 | [Pipeline de Treinamento](Document/09-Pipeline_de_Treinamento_e_Mineracao.md) | KDD completo com métricas |
+| 10 | [Entrega Sprint 1](Document/10-Entrega_Sprint_1.md) | Resultados consolidados |
+| 11 | [Modelagem de Banco de Dados](Document/11-Modelagem_de_Banco_de_Dados.md) | Schemas PostgreSQL |
+| 12 | [Documentação DATASUS](Document/12-Documentacao_Datasets_DATASUS.md) | Datasets utilizados |
+| 13 | [**Especificações de Segurança**](Document/13-Especificacoes_de_Seguranca.md) | Vulnerabilidades, melhorias, LGPD |
+| 14 | [**Arquitetura Backend NestJS**](Document/14-Arquitetura_Backend_NestJS.md) | Módulos, endpoints, fluxos |
+| 15 | [**Arquitetura Frontend Flutter**](Document/15-Arquitetura_Frontend_Flutter.md) | Telas, camadas, componentes |
+
+---
+
+## Estado Atual do Projeto
+
+| Componente | Status | Observações |
+|-----------|--------|-------------|
+| Pipeline KDD (dados + modelo) | ✅ Completo | 378.969 gestantes, K=3 |
+| Worker Flask (inferência) | ✅ Completo | RabbitMQ + HTTP |
+| Backend NestJS — Auth | ✅ Completo | JWT, bcrypt, guards |
+| Backend NestJS — Usuários | ✅ Completo | Cadastro, perfil, ViaCEP |
+| Frontend Flutter — Cadastro/Login | ✅ Completo | Fluxo completo integrado |
+| Frontend Flutter — Dashboard | ✅ Completo | Sincronizado com API |
+| Frontend Flutter — Conteúdo | ✅ Completo | Artigos, nutrição, semana |
+| Integração NestJS ↔ Worker IA | 🔄 Pendente | RabbitMQ a implementar |
+| Questionário de triagem | 🔄 Pendente | Frontend + Backend |
+| Refresh Token | 🔄 Pendente | Ver doc de segurança |
+| Compliance LGPD | 🔄 Pendente | Endpoints de direitos |
+
+---
+
+## Segurança
+
+Este projeto lida com **dados de saúde sensíveis** (categoria especial LGPD, Art. 11). Vulnerabilidades identificadas, melhorias priorizadas e checklist de deploy estão documentados em:
+
+➜ [Document/13-Especificacoes_de_Seguranca.md](Document/13-Especificacoes_de_Seguranca.md)
+
+Antes de qualquer deploy em produção, revisar o checklist de segurança nesse documento.
 
 ---
 
 ## Equipe
 
-- Gabriel Araujo de Pádua
-- Guilherme Dilio de Souza
-- Sheila Alves de Araujo
+| Nome | Papel |
+|------|-------|
+| Gabriel Araujo de Pádua | Backend · Pipeline de Dados · DevOps |
+| Guilherme Dilio de Souza | Backend · Arquitetura |
+| Sheila Alves de Araujo | Frontend · UX |
 
 ---
 
 ## Stack
 
+![Flutter](https://img.shields.io/badge/Flutter-3.8-blue?logo=flutter)
+![NestJS](https://img.shields.io/badge/NestJS-11-red?logo=nestjs)
 ![Python](https://img.shields.io/badge/Python-3.12-blue?logo=python)
 ![Flask](https://img.shields.io/badge/Flask-3.1-black?logo=flask)
 ![scikit-learn](https://img.shields.io/badge/scikit--learn-1.6-orange?logo=scikitlearn)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15-blue?logo=postgresql)
 ![RabbitMQ](https://img.shields.io/badge/RabbitMQ-3.13-orange?logo=rabbitmq)
 ![Docker](https://img.shields.io/badge/Docker-Compose-blue?logo=docker)
-![Flutter](https://img.shields.io/badge/Flutter-mobile-blue?logo=flutter)
+![Prisma](https://img.shields.io/badge/Prisma-7-white?logo=prisma)
