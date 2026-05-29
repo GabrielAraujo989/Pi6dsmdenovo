@@ -1,0 +1,22 @@
+model Pregnancy {
+  id               String          @id @default(uuid()) @db.Uuid
+  userId           String          @map("user_id") @db.Uuid
+  dumStartDate     DateTime?       @map("dum_start_date") @db.Date
+  estimatedDueDate DateTime?       @map("estimated_due_date") @db.Date
+  status           PregnancyStatus @default(ACTIVE)
+  clusterId        Int?            @map("cluster_id") @db.SmallInt
+  clusterName      String?         @map("cluster_name") @db.VarChar(60)
+  createdAt        DateTime        @default(now()) @map("created_at")
+  updatedAt        DateTime        @updatedAt @map("updated_at")
+
+  user           User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  questionnaires QuestionnaireResponse[]
+
+  @@map("pregnancies")
+}
+
+enum PregnancyStatus {
+  ACTIVE      @map("ativa")
+  COMPLETED   @map("finalizada")
+  INTERRUPTED @map("interrompida")
+}

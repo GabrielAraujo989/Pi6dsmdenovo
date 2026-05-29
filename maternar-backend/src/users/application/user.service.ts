@@ -4,7 +4,6 @@ import { UserDto, UserProfileDto } from '../http/user.dto';
 import * as bcrypt from 'bcrypt';
 import { User } from '@prisma/client';
 import { ApiException } from '../../common/api-exception';
-
 import { ViaCepService } from '../../integrations/viacep/viacep.service';
 import { ViaCepResponse } from '../../integrations/viacep/interfaces/IViaCepAdressProvider';
 
@@ -53,6 +52,13 @@ export class UserService {
         password: hashedPassword,
         zipCode: cleanZipCode,
         birthDate: new Date(newUser.birthDate),
+        educationLevel: newUser.educationLevel,
+        raceColor: newUser.raceColor,
+        phone: newUser.phone,
+        height: newUser.height,
+        preGestationalWeight: newUser.preGestationalWeight,
+        previousPregnancies: newUser.previousPregnancies,
+        hadPreviousComplication: newUser.hadPreviousComplication,
         // Prisma Nested Write: O Prisma cria a localização e o usuário na MESMA transação no banco de dados.
         // Feito exclusivamente para não ocorrer falhas parciais.
         ...(viaCepData && {
@@ -96,6 +102,13 @@ export class UserService {
 
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { password: _, ...user } = foundUser;
-    return user;
+
+    return {
+      ...user,
+      height: user.height ? Number(user.height) : null,
+      preGestationalWeight: user.preGestationalWeight
+        ? Number(user.preGestationalWeight)
+        : null,
+    };
   }
 }

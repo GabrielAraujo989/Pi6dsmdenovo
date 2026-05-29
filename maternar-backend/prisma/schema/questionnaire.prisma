@@ -1,0 +1,16 @@
+model QuestionnaireResponse {
+  id                  String   @id @default(uuid()) @db.Uuid
+  pregnancyId         String   @map("pregnancy_id") @db.Uuid
+  currentWeight       Decimal  @map("current_weight") @db.Decimal(5, 2)
+  currentAppointments Int      @map("current_appointments") @db.SmallInt
+  hadNewComplications Boolean  @map("had_new_complications")
+  antiHivFlag         Int      @map("anti_hiv_flag") @db.SmallInt
+  clusterId           Int?     @map("cluster_id") @db.SmallInt
+  clusterName         String?  @map("cluster_name") @db.VarChar(60)
+  calculatedImc       Decimal? @map("calculated_imc") @db.Decimal(5, 2)
+  responseDate        DateTime @default(now()) @map("response_date") @db.Timestamptz
+
+  pregnancy Pregnancy @relation(fields: [pregnancyId], references: [id], onDelete: Cascade)
+
+  @@map("questionnaires")
+}

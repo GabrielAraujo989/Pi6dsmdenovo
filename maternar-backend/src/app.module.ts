@@ -5,6 +5,8 @@ import { DatabaseModule } from './database/database.module';
 import { UserModule } from './users/user.module';
 import { AuthModule } from './auth/auth.module';
 import { ViacepModule } from './integrations/viacep/viacep.module';
+import { PregnancyModule } from './pregnancies/pregnancy.module';
+import { QuestionnaireModule } from './questionnaires/questionnaire.module';
 
 @Module({
   imports: [
@@ -13,6 +15,8 @@ import { ViacepModule } from './integrations/viacep/viacep.module';
     ViacepModule,
     UserModule,
     AuthModule,
+    PregnancyModule,
+    QuestionnaireModule,
   ],
   controllers: [],
   providers: [],

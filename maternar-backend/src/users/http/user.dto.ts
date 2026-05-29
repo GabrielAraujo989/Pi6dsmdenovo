@@ -1,9 +1,13 @@
 import {
+  IsBoolean,
   IsDateString,
   IsEmail,
   IsNotEmpty,
+  IsNumber,
   IsOptional,
   IsString,
+  Max,
+  Min,
   MinLength,
 } from 'class-validator';
 
@@ -25,6 +29,27 @@ export class UserDto {
   @MinLength(6)
   password: string;
 
+  @IsOptional()
+  @IsString()
+  phone?: string;
+
+  @IsOptional()
+  @IsNumber()
+  height?: number;
+
+  @IsOptional()
+  @IsNumber()
+  preGestationalWeight?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  previousPregnancies?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  hadPreviousComplication?: boolean;
+
   @IsNotEmpty()
   @IsString()
   zipCode: string;
@@ -32,6 +57,16 @@ export class UserDto {
   @IsNotEmpty()
   @IsDateString()
   birthDate: Date;
+
+  @IsNotEmpty()
+  @Min(1)
+  @Max(5)
+  raceColor: number;
+
+  @IsNotEmpty()
+  @Min(1)
+  @Max(5)
+  educationLevel: number;
 }
 
 export interface UserProfileDto {
@@ -39,5 +74,12 @@ export interface UserProfileDto {
   name: string;
   email: string;
   zipCode: string;
+  phone?: string | null;
+  height?: number | null;
+  preGestationalWeight?: number | null;
+  previousPregnancies?: number | null;
+  hadPreviousComplication?: boolean | null;
+  educationLevel: number;
+  raceColor: number;
   birthDate: Date;
 }

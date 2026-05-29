@@ -4,15 +4,18 @@ model User {
   email                   String        @unique
   password                String
   phone                   String?
-  height                  Decimal?
-  weight                  Decimal?
+  height                  Decimal?      @db.Decimal(5, 2)
+  preGestationalWeight    Decimal?      @map("pre_gestational_weight") @db.Decimal(5, 2)
   previousPregnancies     Int?          @map("previous_pregnancies")
-  educationLevel          Int?          @map("education_level")
+  educationLevel          Int           @map("education_level")
+  raceColor               Int           @map("race_color")
   zipCode                 String        @map("zip_code")
   hadPreviousComplication Boolean?      @map("had_previous_complication")
   birthDate               DateTime      @map("birth_date") @db.Date
   createdAt               DateTime      @default(now()) @map("created_at")
+  updatedAt               DateTime      @updatedAt @map("updated_at")
   location                UserLocation?
+  pregnancies             Pregnancy[]
 
   @@map("users")
 }
