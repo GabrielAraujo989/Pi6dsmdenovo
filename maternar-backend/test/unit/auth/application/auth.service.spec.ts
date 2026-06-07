@@ -119,11 +119,11 @@ describe('AuthService', () => {
       );
       expect(jwtServiceMock.signAsync).toHaveBeenCalledWith(
         { sub: 'user-id-123', email: 'test@example.com', name: 'Maria' },
-        { expiresIn: 60 },
+        { expiresIn: 604800 },
       );
       expect(result).toEqual({
         access_token: 'mocked-jwt-token',
-        expiresIn: 60,
+        expiresIn: 604800,
       });
 
       bcryptCompareSpy.mockRestore();

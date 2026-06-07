@@ -45,7 +45,7 @@ O **Maternar** utiliza um modelo K-Means (K=3) treinado com **378.969 gestantes*
            │ PostgreSQL (Prisma)              │ RabbitMQ
            ▼                                  ▼
 ┌──────────────────┐              ┌──────────────────────────┐
-│   PostgreSQL 15  │              │   Worker Flask (IA)       │
+│   PostgreSQL 16  │              │   Worker Flask (IA)       │
 │   Dados de       │              │   KMeans K=3 · PCA · Scaler│
 │   gestantes e    │◄─────────────│   Classificação de perfil │
 │   localizações   │              │   gestacional             │
@@ -128,9 +128,11 @@ Maternar/
     ├── 10-Entrega_Sprint_1.md
     ├── 11-Modelagem_de_Banco_de_Dados.md
     ├── 12-Documentacao_Datasets_DATASUS.md
-    ├── 13-Especificacoes_de_Seguranca.md   ← NOVO
-    ├── 14-Arquitetura_Backend_NestJS.md    ← NOVO
-    └── 15-Arquitetura_Frontend_Flutter.md  ← NOVO
+    ├── 13-Especificacoes_de_Seguranca.md
+    ├── 14-Arquitetura_Backend_NestJS.md
+    ├── 15-Arquitetura_Frontend_Flutter.md
+    ├── 16-Guia_de_Integração.md
+    └── 17-Modelagem_de_Banco_de_DadosNOVO.md
 ```
 
 ---
@@ -252,9 +254,11 @@ curl -X POST http://localhost:5001/classificar \
 | 10 | [Entrega Sprint 1](Document/10-Entrega_Sprint_1.md) | Resultados consolidados |
 | 11 | [Modelagem de Banco de Dados](Document/11-Modelagem_de_Banco_de_Dados.md) | Schemas PostgreSQL |
 | 12 | [Documentação DATASUS](Document/12-Documentacao_Datasets_DATASUS.md) | Datasets utilizados |
-| 13 | [**Especificações de Segurança**](Document/13-Especificacoes_de_Seguranca.md) | Vulnerabilidades, melhorias, LGPD |
-| 14 | [**Arquitetura Backend NestJS**](Document/14-Arquitetura_Backend_NestJS.md) | Módulos, endpoints, fluxos |
-| 15 | [**Arquitetura Frontend Flutter**](Document/15-Arquitetura_Frontend_Flutter.md) | Telas, camadas, componentes |
+| 13 | [Especificações de Segurança](Document/13-Especificacoes_de_Seguranca.md) | Vulnerabilidades, melhorias, LGPD |
+| 14 | [Arquitetura Backend NestJS](Document/14-Arquitetura_Backend_NestJS.md) | Módulos, endpoints, fluxos |
+| 15 | [Arquitetura Frontend Flutter](Document/15-Arquitetura_Frontend_Flutter.md) | Telas, camadas, componentes |
+| 16 | [Guia de Integração](Document/16-Guia_de_Integração.md) | Contratos de API: payloads, respostas, fluxos |
+| 17 | [Modelagem de Banco de Dados](Document/17-Modelagem_de_Banco_de_DadosNOVO.md) | Schema Prisma, DDL, relacionamentos |
 
 ---
 
@@ -269,8 +273,10 @@ curl -X POST http://localhost:5001/classificar \
 | Frontend Flutter — Cadastro/Login | ✅ Completo | Fluxo completo integrado |
 | Frontend Flutter — Dashboard | ✅ Completo | Sincronizado com API |
 | Frontend Flutter — Conteúdo | ✅ Completo | Artigos, nutrição, semana |
-| Integração NestJS ↔ Worker IA | 🔄 Pendente | RabbitMQ a implementar |
-| Questionário de triagem | 🔄 Pendente | Frontend + Backend |
+| Backend NestJS — Classificação IA | ✅ Completo | POST /classification via RabbitMQ |
+| Backend NestJS — Gestações | ✅ Completo | CRUD de ciclos gestacionais |
+| Backend NestJS — Questionários | ✅ Completo | Check-in com classificação IA em tempo real |
+| Integração NestJS ↔ Worker IA | ✅ Completo | RabbitMQ RPC com timeout de 10s |
 | Refresh Token | 🔄 Pendente | Ver doc de segurança |
 | Compliance LGPD | 🔄 Pendente | Endpoints de direitos |
 

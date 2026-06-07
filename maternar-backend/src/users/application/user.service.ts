@@ -1,6 +1,6 @@
 import { ConflictException, HttpStatus, Injectable } from '@nestjs/common';
 import { DatabaseService } from '../../database/database.service';
-import { UserDto, UserProfileDto } from '../http/user.dto';
+import { UpdateUserProfileDto, UserDto, UserProfileDto } from '../http/user.dto';
 import * as bcrypt from 'bcrypt';
 import { User } from '@prisma/client';
 import { ApiException } from '../../common/api-exception';
@@ -83,6 +83,36 @@ export class UserService {
         email,
       },
     });
+  }
+
+  async updateProfile(userId: string, dto: UpdateUserProfileDto): Promise<UserProfileDto> {
+    const updated = await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        ...(dto.name !== undefined && { name: dto.name }),
+        ...(dto.phone !== undefined && { phone: dto.phone }),
+        ...(dto.height !== undefined && { height: dto.height }),
+        ...(dto.preGestationalWeight !== undefined && {
+          preGestationalWeight: dto.preGestationalWeight,
+        }),
+        ...(dto.previousPregnancies !== undefined && {
+          previousPregnancies: dto.previousPregnancies,
+        }),
+        ...(dto.hadPreviousComplication !== undefined && {
+          hadPreviousComplication: dto.hadPreviousComplication,
+        }),
+      },
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { password: _, ...user } = updated;
+    return {
+      ...user,
+      height: user.height ? Number(user.height) : null,
+      preGestationalWeight: user.preGestationalWeight
+        ? Number(user.preGestationalWeight)
+        : null,
+    };
   }
 
   async retrieveUserProfile(userId: string): Promise<UserProfileDto> {

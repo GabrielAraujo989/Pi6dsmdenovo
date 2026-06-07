@@ -1,22 +1,20 @@
-version: '3.8'
-
 services:
   postgres:
-    image: postgres:15-alpine
+    image: postgres:16
     container_name: maternar_postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ${DB_USER}
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
-      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: gestasus_password
+      POSTGRES_DB: gestasus_db
     ports:
-      - '5435:5432'
+      - '5490:5432'
     volumes:
       - pgdata:/var/lib/postgresql/data
     networks:
       - maternar_net
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      test: ["CMD-SHELL", "pg_isready -U admin -d gestasus_db"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -26,8 +24,8 @@ services:
     container_name: maternar_rabbitmq
     restart: unless-stopped
     environment:
-      RABBITMQ_DEFAULT_USER: ${RABBIT_USER}
-      RABBITMQ_DEFAULT_PASS: ${RABBIT_PASSWORD}
+      RABBITMQ_DEFAULT_USER: maternar
+      RABBITMQ_DEFAULT_PASS: maternar_pass
     ports:
       - '5672:5672'
       - '15672:15672'
@@ -53,13 +51,13 @@ services:
     environment:
       PGHOST: postgres
       PGPORT: 5432
-      PGDATABASE: ${DB_NAME}
-      PGUSER: ${DB_USER}
-      PGPASSWORD: ${DB_PASSWORD}
+      PGDATABASE: gestasus_db
+      PGUSER: admin
+      PGPASSWORD: gestasus_password
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_PORT: 5672
-      RABBITMQ_USER: ${RABBIT_USER}
-      RABBITMQ_PASSWORD: ${RABBIT_PASSWORD}
+      RABBITMQ_USER: maternar
+      RABBITMQ_PASSWORD: maternar_pass
       RABBITMQ_VHOST: /
       QUEUE_CLASSIFY: maternar.classificar
       QUEUE_DLX: maternar.classificar.dlq

@@ -69,6 +69,38 @@ export class UserDto {
   educationLevel: number;
 }
 
+export class UpdateUserProfileDto {
+  @IsOptional()
+  @IsString()
+  @MinLength(3)
+  name?: string;
+
+  @IsOptional()
+  @IsString()
+  phone?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(1.0)
+  @Max(2.5)
+  height?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(30)
+  @Max(250)
+  preGestationalWeight?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  previousPregnancies?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  hadPreviousComplication?: boolean;
+}
+
 export interface UserProfileDto {
   id: string;
   name: string;

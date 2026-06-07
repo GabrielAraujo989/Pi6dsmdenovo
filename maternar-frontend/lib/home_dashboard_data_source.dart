@@ -176,10 +176,10 @@ class MockHomeDashboardDataSource implements HomeDashboardDataSource {
 }
 
 class ApiHomeDashboardDataSource implements HomeDashboardDataSource {
-  const ApiHomeDashboardDataSource({
-    this.api = const BackendApi(),
+  ApiHomeDashboardDataSource({
+    BackendApi? api,
     this.fallback = const MockHomeDashboardDataSource(),
-  });
+  }) : api = api ?? BackendApi();
 
   final BackendApi api;
   final HomeDashboardDataSource fallback;

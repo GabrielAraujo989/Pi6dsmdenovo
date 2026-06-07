@@ -1,7 +1,7 @@
 # 14 — Arquitetura do Backend NestJS
 
-**Data:** 2026-05-29  
-**Versão:** 1.0  
+**Data:** 2026-06-07  
+**Versão:** 2.0  
 **Stack:** NestJS 11 · Prisma 7 · PostgreSQL · TypeScript 5 · JWT · bcrypt
 
 ---
@@ -15,7 +15,8 @@ A API é responsável por:
 - Registro e autenticação de gestantes
 - Gestão de perfil com enriquecimento geográfico via CEP
 - Persistência de dados via PostgreSQL (Prisma ORM)
-- Futura integração com o serviço de IA (Worker Flask via RabbitMQ)
+- Gestão de ciclos gestacionais e check-ins periódicos
+- Integração com Worker Flask via RabbitMQ (classificação gestacional em tempo real)
 
 ---
 
@@ -62,12 +63,23 @@ src/
 │   └── http/
 │       └── questionnaire.controller.ts, questionnaire.dto.ts
 │
+├── classification/                  # Módulo de Classificação Direta
+│   ├── classification.controller.ts # POST /classification
+│   ├── classification.service.ts    # Monta payload e chama RabbitMQ
+│   ├── classification.dto.ts        # ClassificationDto (campos do modelo IA)
+│   └── classification.module.ts
+│
 ├── integrations/
-│   └── viacep/                      # Integração ViaCEP
-│       ├── viacep.service.ts        # Fetch com timeout (5s) + tratamento de erros
-│       ├── viacep.module.ts
+│   ├── viacep/                      # Integração ViaCEP
+│   │   ├── viacep.service.ts        # Fetch com timeout (5s) + tratamento de erros
+│   │   ├── viacep.module.ts
+│   │   └── interfaces/
+│   │       └── IViaCepAdressProvider.ts
+│   └── rabbitmq/                    # Integração RabbitMQ (RPC)
+│       ├── rabbitmq.service.ts      # Publicação RPC com correlation_id (timeout 10s)
+│       ├── rabbitmq.module.ts
 │       └── interfaces/
-│           └── IViaCepAdressProvider.ts
+│           └── classification-payload.interface.ts
 │
 ├── database/
 │   ├── database.module.ts           # Global DatabaseModule
@@ -102,7 +114,7 @@ Autentica uma gestante com email e senha.
 ```json
 {
   "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-  "expiresIn": 60
+  "expiresIn": 604800
 }
 ```
 
@@ -142,7 +154,7 @@ Cria uma nova conta de gestante. Internamente:
 }
 ```
 
-**Campos opcionais no schema (não expostos no DTO atual):** `phone`, `height`, `weight`, `previousPregnancies`, `educationLevel`, `hadPreviousComplication`
+**Campos opcionais:** `phone`, `height`, `preGestationalWeight`, `previousPregnancies`, `hadPreviousComplication`
 
 **Response 201:**
 
@@ -169,10 +181,35 @@ Retorna o perfil da gestante autenticada. Requer `Authorization: Bearer <token>`
   "name": "Maria Silva",
   "email": "maria@exemplo.com",
   "zipCode": "01001000",
-  "birthDate": "2026-09-20T00:00:00.000Z",
-  "createdAt": "2026-04-29T01:50:48.740Z"
+  "phone": null,
+  "height": 1.65,
+  "preGestationalWeight": 65.5,
+  "previousPregnancies": null,
+  "hadPreviousComplication": null,
+  "educationLevel": 3,
+  "raceColor": 4,
+  "birthDate": "1995-05-15"
 }
 ```
+
+---
+
+#### `PATCH /users/profile`
+
+Atualiza parcialmente o perfil da gestante autenticada. Todos os campos são opcionais.
+
+**Request:**
+
+```json
+{
+  "name": "Maria S.",
+  "phone": "11999999999",
+  "height": 1.65,
+  "preGestationalWeight": 65.5
+}
+```
+
+**Response 200:** retorna o perfil completo atualizado (mesmo formato do `GET /users/profile`)
 
 ---
 
@@ -200,7 +237,7 @@ Retorna a lista de todas as gestações cadastradas pela usuária, ordenadas da 
 
 #### `POST /questionnaires/:pregnancyId/submit`
 
-Registra um check-in de saúde vinculado a uma gestação específica. Atualmente, os dados são salvos parcialmente enquanto aguardam a integração com o worker de Inteligência Artificial para definição do `clusterId`.
+Registra um check-in de saúde vinculado a uma gestação específica. O NestJS publica o payload na fila RabbitMQ `maternar.classificar` e aguarda a resposta do Worker Flask (timeout de 10s). O resultado completo (clusterId, recomendações, métricas) é persistido no banco e retornado imediatamente ao app.
 
 **Request (Obrigatório):**
 
@@ -357,11 +394,17 @@ npm run test:watch    # Watch mode
 
 ### Variáveis de Ambiente
 
-| Variável       | Obrigatória | Descrição                                 |
-| -------------- | ----------- | ----------------------------------------- |
-| `DATABASE_URL` | Sim         | Connection string PostgreSQL              |
-| `JWT_SECRET`   | Sim         | Chave de assinatura JWT (mínimo 32 bytes) |
-| `PORT`         | Não         | Porta da API (padrão: 3000)               |
+| Variável            | Obrigatória | Descrição                                 |
+| ------------------- | ----------- | ----------------------------------------- |
+| `DATABASE_URL`      | Sim         | Connection string PostgreSQL              |
+| `JWT_SECRET`        | Sim         | Chave de assinatura JWT (mínimo 32 bytes) |
+| `PORT`              | Não         | Porta da API (padrão: 3000)               |
+| `RABBITMQ_HOST`     | Sim         | Host do broker RabbitMQ                   |
+| `RABBITMQ_PORT`     | Não         | Porta AMQP (padrão: 5672)                 |
+| `RABBITMQ_USER`     | Sim         | Usuário RabbitMQ                          |
+| `RABBITMQ_PASSWORD` | Sim         | Senha RabbitMQ                            |
+| `RABBITMQ_VHOST`    | Não         | Virtual host (padrão: `/`)                |
+| `RABBITMQ_QUEUE`    | Sim         | Nome da fila (padrão: `maternar.classificar`) |
 
 ### Docker Compose
 
@@ -389,17 +432,80 @@ npm run start:dev             # Inicia API em modo watch
 | `class-validator`   | ^0.15.1 | Validação de DTOs               |
 | `class-transformer` | ^0.5.1  | Transformação de objetos        |
 | `@nestjs/config`    | ^4.0.3  | Gestão de variáveis de ambiente |
+| `amqplib`           | ^2.0.1  | Cliente AMQP para RabbitMQ      |
+| `uuid`              | latest  | correlation_id para RPC RabbitMQ |
 
 ---
 
-## 10. Pendências e Próximos Passos
+## 10. Módulo `/classification` — Implementado
 
+### 10.1 Fluxo implementado
+
+```
+Flutter
+  POST /classification   { nu_peso, nu_altura, nu_imc_pre_gestacional,
+  Authorization: Bearer    raca_cor, escolaridade, flag_anti_hiv }
+       │
+       ▼
+  NestJS ClassificationService
+       │── busca User com location (ibgeCode) pelo userId do JWT
+       │── cria gestação ACTIVE automaticamente se não houver nenhuma
+       │── monta IClassificationPayload (adiciona cod_municipio via ibgeCode)
+       │── publica na fila RabbitMQ 'maternar.classificar' (RPC, timeout 10s)
+       │
+       ▼
+  Worker Flask (Python)
+       │── RobustScaler → PCA (8 comp) → KMeans K=3
+       │── retorna { cluster_id, cluster_nome_app, nivel_risco, cor_hex,
+       │            recomendacoes[], metricas{} }
+       │
+       ▼
+  NestJS ClassificationService
+       │── persiste resultado como QuestionnaireResponse no banco
+       │── atualiza campos current_* na Pregnancy
+       │── retorna JSON completo ao Flutter
+```
+
+### 10.2 DTO de entrada (`src/classification/classification.dto.ts`)
+
+```typescript
+export class ClassificationDto {
+  @IsNumber() @Min(30) @Max(250)
+  nu_peso: number;
+
+  @IsNumber() @Min(1.30) @Max(2.15)
+  nu_altura: number;
+
+  @IsNumber() @Min(10) @Max(80)
+  nu_imc_pre_gestacional: number;
+
+  @IsInt() @Min(1) @Max(5)
+  raca_cor: number;
+
+  @IsInt() @Min(1) @Max(5)
+  escolaridade: number;
+
+  @IsOptional() @IsInt() @Min(0) @Max(1)
+  flag_anti_hiv?: number;
+}
+```
+
+### 10.3 ibgeCode — fonte da verdade
+
+O `cod_municipio` é injetado automaticamente pelo `ClassificationService` a partir de `UserLocation.ibgeCode`, populado durante o cadastro via ViaCEP → IBGE. A gestante não precisa informar o município.
+
+---
+
+## 11. Pendências e Próximos Passos
+
+- [x] Implementar módulo `ClassificationModule` com `POST /classification`
+- [x] ibgeCode da `UserLocation` injetado nos payloads de classificação
+- [x] Implementar endpoints de `pregnancies` e `questionnaires` (CRUD com RabbitMQ)
+- [x] Implementar integração RabbitMQ para envio de dados ao Worker de IA
+- [x] Salvar retorno do cluster IA na Pregnancy (campos `current_*`) e no QuestionnaireResponse
 - [ ] Implementar refresh token (ver [doc 13 — Segurança](./13-Especificacoes_de_Seguranca.md))
-- [ ] Adicionar Helmet.js e configuração de CORS explícita
+- [ ] Adicionar Helmet.js e configuração de CORS restritiva
 - [ ] Adicionar rate limiting com `@nestjs/throttler`
-- [x] Implementar endpoints de `pregnancies` e `questionnaires` (CRUD básico)
-- [ ] Implementar integração RabbitMQ para envio de dados ao Worker de IA
-- [ ] Atualizar status da gestação e salvar retorno do cluster IA após resposta do Worker
 - [ ] Adicionar endpoints LGPD: `GET /users/my-data`, `DELETE /users/me`
 - [ ] Configurar versionamento de API (`/v1/`)
 - [ ] Implementar logging estruturado com contexto de segurança

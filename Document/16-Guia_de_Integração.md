@@ -70,7 +70,7 @@ _Nota:_ O Backend limpará o `zipCode` e fará a consulta no ViaCEP automaticame
 ```json
 {
   "access_token": "eyJhbGciOiJIUzI1NiIsInR5c...",
-  "expiresIn": 3600
+  "expiresIn": 604800
 }
 ```
 

@@ -1,7 +1,7 @@
 # 15 — Arquitetura do Frontend Flutter
 
-**Data:** 2026-05-29  
-**Versão:** 1.0  
+**Data:** 2026-06-07  
+**Versão:** 1.1  
 **Stack:** Flutter 3.8+ · Dart 3.8+ · Material 3 · http · shared_preferences · google_fonts
 
 ---
@@ -91,6 +91,11 @@ Cliente HTTP tipado para comunicação com o backend NestJS.
 | `register()` | POST | `/users/register` | Não |
 | `login()` | POST | `/auth/login` | Não |
 | `profile()` | GET | `/users/profile` | Bearer JWT |
+| `classify()` | POST | `/classification` | Bearer JWT |
+| `createPregnancy()` | POST | `/pregnancy/create` | Bearer JWT |
+| `getPregnancies()` | GET | `/pregnancy` | Bearer JWT |
+| `submitQuestionnaire()` | POST | `/questionnaires/:pregnancyId/submit` | Bearer JWT |
+| `getQuestionnaireHistory()` | GET | `/questionnaires/pregnancy/:pregnancyId` | Bearer JWT |
 
 **Tratamento de erros:**
 - `ApiClientException`: exceção tipada com mensagem em português
@@ -209,6 +214,57 @@ Telas de conteúdo educativo e informativo. Dados estáticos no momento, prontos
 
 ---
 
+## 5-A. Fluxo de Classificação Gestacional (Integração com IA)
+
+### Campos coletados no QuestionnaireScreen
+
+| Campo UI | Validação | Mapeamento para o modelo |
+|----------|-----------|--------------------------|
+| Peso atual (kg) | 30–250 kg | `nu_peso` |
+| Peso pré-gestacional (kg) | 30–250 kg | Calcula `nu_imc_pre_gestacional = preWeight / (height²)` |
+| Altura (cm) | 130–215 cm | `nu_altura` (convertido: cm ÷ 100) |
+| Raça/cor | Dropdown 1–5 | `raca_cor` (1=Branca, 2=Preta, 3=Amarela, 4=Parda, 5=Indígena) |
+| Escolaridade | Dropdown 1–5 | `escolaridade` (1=Sem escolaridade … 5=Superior) |
+
+> O `cod_municipio` é injetado automaticamente pelo backend a partir do `ibgeCode` armazenado em `user_locations` durante o cadastro via ViaCEP. A gestante não precisa informá-lo.
+
+### Fluxo entre telas
+
+```
+QuestionnaireScreen
+   │
+   │  Navigator.pushNamed('/processing',
+   │    arguments: { weight, height, imcPreGestacional, racaCor, escolaridade })
+   ▼
+ProfileProcessingScreen (StatefulWidget)
+   │── didChangeDependencies() → _runClassification()
+   │── BackendApi.classify(token, ...)
+   │         └─ POST /classification (Authorization: Bearer JWT)
+   │
+   ├── result.isAlert == false ──► pushReplacementNamed('/safe-path', arguments: result)
+   │                                    └─ SafePathResultScreen usa result.clusterNomeApp
+   │                                       + result.recomendacoes (textos dinâmicos da IA)
+   │
+   └── result.isAlert == true ───► pushReplacementNamed('/high-alert', arguments: result)
+                                        └─ HighAlertResultScreen usa result.clusterNomeApp
+                                           + result.recomendacoes
+```
+
+### Lógica `isAlert` no ClassificationResult (`backend_api.dart`)
+
+```dart
+// C1 = "Caminho Seguro" (71% da base) → isAlert = false
+// C0 = "Cuidado Integral" (27%) → isAlert = true
+// C2 = "Atencao Redobrada" (1.5%) → isAlert = true
+bool get isAlert => clusterId != 1;
+```
+
+### Fallback quando endpoint ainda não implementado
+
+Se `POST /classification` retornar erro, `ProfileProcessingScreen` exibe a mensagem do servidor e um botão "Ver Resultado Padrão" que navega para `/safe-path` com `arguments: null`. As telas de resultado usam listas de dicas estáticas como fallback.
+
+---
+
 ## 6. Identidade Visual (GestCareColors)
 
 | Token | Cor Hex | Uso |
@@ -324,13 +380,17 @@ flutter build apk --obfuscate --split-debug-info=build/symbols
 
 ## 12. Pendências e Próximos Passos
 
-- [ ] Migrar `SharedPreferences` para `flutter_secure_storage` (dados sensíveis)
-- [ ] Implementar lógica de refresh de token JWT
-- [ ] Implementar questionário de triagem com envio ao backend
-- [ ] Conectar tela de resultados (`/safe-path`, `/high-alert`) com dados reais do cluster
+### Integração com backend — concluída
+- [x] Endpoint `POST /classification` implementado no NestJS (ver [Doc 14 — seção 10](./14-Arquitetura_Backend_NestJS.md))
+- [x] `ibgeCode` injetado automaticamente pelo backend a partir de `user_locations`
+
+### Frontend — melhorias pendentes
+- [ ] Migrar `SharedPreferences` para `flutter_secure_storage` (token JWT + dados sensíveis)
+- [ ] Implementar lógica de refresh de token JWT (token expira em 7 dias / 604800s)
 - [ ] Implementar persistência do diário de sintomas no backend
-- [ ] Adicionar testes de integração para fluxo de cadastro e login
+- [ ] Adicionar testes de integração para fluxo de cadastro/login/questionário
 - [ ] Configurar CI/CD com `flutter analyze` e `flutter test`
-- [ ] Obfuscação e análise de segurança para build de release
+- [ ] Build de release com obfuscação (`--obfuscate --split-debug-info`)
 - [ ] Internacionalização (i18n) com `flutter_localizations`
 - [ ] Acessibilidade: revisar semântica de widgets para leitores de tela
+- [ ] Corrigir deprecações de `activeColor` (Switch) e `value` (DropdownButtonFormField)

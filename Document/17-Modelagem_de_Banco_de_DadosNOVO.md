@@ -18,9 +18,9 @@ O sistema mantém dois schemas no mesmo banco PostgreSQL `maternar`:
 ### Diagrama Conceitual
 
 ```
-users ──(1:N)──▶ gestacoes ──(1:N)──▶ questionario_respostas
-                    │
-                    └──(N:1)──▶ clusters ──(N:N via cluster_dicas)──▶ dicas
+users ──(1:1)──▶ user_locations
+  │
+  └──(1:N)──▶ pregnancies ──(1:N)──▶ questionnaires
 ```
 
 ---
@@ -75,7 +75,7 @@ Armazena os dados geográficos detalhados da usuária, separados da tabela princ
 
 ---
 
-### 2.3. Tabela `app.gestacoes`
+### 2.3. Tabela `app.pregnancies` (Gestações)
 
 Cada linha representa um ciclo gestacional. Uma usuária pode ter múltiplas gestações ao longo do tempo.
 
@@ -95,14 +95,14 @@ Cada linha representa um ciclo gestacional. Uma usuária pode ter múltiplas ges
 
 ---
 
-### 2.4. Tabela `app.questionario_respostas`
+### 2.4. Tabela `app.questionnaires` (Respostas de Check-in)
 
-Registra cada check-in periódico da gestante, servindo como uma **Timeline/Histórico**. O Worker (IA) agora é a fonte da verdade: ele retorna as dicas, cores e métricas completas, que são salvas nativamente como `JSON` no banco de dados.
+Registra cada check-in periódico da gestante, servindo como uma **Timeline/Histórico**. O Worker (IA) é a fonte da verdade: ele retorna as dicas, cores e métricas completas, que são salvas nativamente como `JSONB` no banco de dados.
 
 | Coluna                | Tipo         | Restrições                        | Descrição                                            |
 | --------------------- | ------------ | --------------------------------- | ---------------------------------------------------- |
 | `id`                  | UUID         | PK, DEFAULT gen_random_uuid()     | Identificador único                                  |
-| `pregnancyId`         | UUID         | FK → `app.gestacoes.id`, NOT NULL | Gestação relacionada                                 |
+| `pregnancyId`         | UUID         | FK → `app.pregnancies.id`, NOT NULL | Gestação relacionada                               |
 | `currentWeight`       | NUMERIC(5,2) | NOT NULL, CHECK (30.0–250.0)      | Peso no momento do check-in (kg) — feature `nu_peso` |
 | `currentAppointments` | SMALLINT     | NOT NULL, CHECK >= 0              | Consultas pré-natal realizadas até agora             |
 | `hadNewComplications` | BOOLEAN      | DEFAULT FALSE                     | Novo evento clínico desde o último check-in          |
@@ -146,18 +146,19 @@ CREATE TABLE app.users (
     email                    VARCHAR(254) UNIQUE NOT NULL,
     password                 VARCHAR(255) NOT NULL,
     phone                    VARCHAR(20),
-    birth_date               DATE,
-    race_color               SMALLINT     CHECK (race_color BETWEEN 1 AND 5),
-    height                   NUMERIC(4,2) CHECK (height BETWEEN 1.00 AND 2.50),
-    pre_gestational_weight   NUMERIC(5,2) CHECK (pre_gestational_weight BETWEEN 30 AND 250),
-    education_level          SMALLINT     CHECK (education_level BETWEEN 1 AND 5),
+    birth_date               DATE         NOT NULL,
+    race_color               SMALLINT     NOT NULL CHECK (race_color BETWEEN 1 AND 5),
+    height                   NUMERIC(5,2),
+    pre_gestational_weight   NUMERIC(5,2),
+    education_level          SMALLINT     NOT NULL CHECK (education_level BETWEEN 1 AND 5),
     previous_pregnancies     SMALLINT     CHECK (previous_pregnancies >= 0),
-    had_previous_complication BOOLEAN     DEFAULT FALSE,
+    had_previous_complication BOOLEAN,
     zip_code                 VARCHAR(9)   NOT NULL,
-    ibge_code                VARCHAR(7)   NOT NULL,
     created_at               TIMESTAMPTZ  DEFAULT now(),
     updated_at               TIMESTAMPTZ  DEFAULT now()
 );
+-- Nota: ibge_code NÃO está em users. Ele é armazenado em app.user_locations,
+-- populado via ViaCEP no cadastro e injetado pelo backend nos payloads de IA.
 
 -- 3.2 User Locations (Localização da Gestante)
 CREATE TABLE app.user_locations (
@@ -172,40 +173,52 @@ CREATE TABLE app.user_locations (
 
 -- 3.3 Pregnancies (Gestações)
 CREATE TABLE app.pregnancies (
-    id                UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id           UUID        NOT NULL REFERENCES app.users(id) ON DELETE CASCADE,
-    dum_start_date    DATE,
-    estimated_due_date DATE,
-    status            VARCHAR(20) DEFAULT 'active' CHECK (status IN ('active','completed','interrupted')),
-    cluster_id        SMALLINT    REFERENCES app.clusters(id),
-    cluster_name      VARCHAR(60),
-    created_at        TIMESTAMPTZ DEFAULT now(),
-    updated_at        TIMESTAMPTZ DEFAULT now()
+    id                    UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id               UUID        NOT NULL REFERENCES app.users(id) ON DELETE CASCADE,
+    dum_start_date        DATE,
+    estimated_due_date    DATE,
+    status                VARCHAR(20) DEFAULT 'ativa' CHECK (status IN ('ativa','finalizada','interrompida')),
+    current_cluster_id    SMALLINT,
+    current_cluster_name  VARCHAR(60),
+    current_risk_level    VARCHAR(20),
+    current_hex_color     VARCHAR(7),
+    created_at            TIMESTAMPTZ DEFAULT now(),
+    updated_at            TIMESTAMPTZ DEFAULT now()
 );
+-- Nota: os campos current_* são cache da última classificação — atualizados a cada check-in.
+-- O enum de status é mapeado pelo Prisma: ACTIVE='ativa', COMPLETED='finalizada', INTERRUPTED='interrompida'.
 
--- 3.4 Questionnaires (Questionário Respostas)
-CREATE TABLE app.questionnaire_responses (
+-- 3.4 Questionnaires (Respostas de Check-in)
+-- Tabela mapeada como 'questionnaires' no Prisma (@@map("questionnaires"))
+CREATE TABLE app.questionnaires (
     id                    UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
     pregnancy_id          UUID         NOT NULL REFERENCES app.pregnancies(id) ON DELETE CASCADE,
-    current_weight        NUMERIC(5,2) NOT NULL CHECK (current_weight BETWEEN 30 AND 250),
-    current_appointments  SMALLINT     NOT NULL CHECK (current_appointments >= 0),
-    had_new_complications BOOLEAN      DEFAULT FALSE,
-    anti_hiv_flag         SMALLINT     DEFAULT 0 CHECK (anti_hiv_flag IN (0, 1)),
-    cluster_id            SMALLINT     REFERENCES app.clusters(id),
+    current_weight        NUMERIC(5,2) NOT NULL,
+    current_appointments  SMALLINT     NOT NULL,
+    had_new_complications BOOLEAN      NOT NULL DEFAULT FALSE,
+    anti_hiv_flag         SMALLINT     NOT NULL DEFAULT 0 CHECK (anti_hiv_flag IN (0, 1)),
+    cluster_id            SMALLINT,
     cluster_name          VARCHAR(60),
+    risk_level            VARCHAR(20),
+    hex_color             VARCHAR(7),
     calculated_imc        NUMERIC(5,2),
+    recommendations       JSONB,
+    metrics               JSONB,
     response_date         TIMESTAMPTZ  DEFAULT now()
 );
+-- recommendations: array de objetos { "categoria": "...", "texto": "..." }
+-- metrics: objeto com chaves nu_imc_calculado, ganho_imc, estado_nutricional, etc.
 ```
 
 ---
 
 ## 4. Relacionamentos e Cardinalidade
 
-| Relacionamento                         | Tipo | Descrição                                             |
-| -------------------------------------- | ---- | ----------------------------------------------------- |
-| `users` → `gestacoes`                  | 1:N  | Uma gestante pode ter múltiplas gestações registradas |
-| `gestacoes` → `questionario_respostas` | 1:N  | Cada gestação acumula check-ins periódicos            |
+| Relacionamento                    | Tipo | Descrição                                             |
+| --------------------------------- | ---- | ----------------------------------------------------- |
+| `users` → `user_locations`        | 1:1  | Cada gestante tem uma localização (via ViaCEP)        |
+| `users` → `pregnancies`           | 1:N  | Uma gestante pode ter múltiplas gestações registradas |
+| `pregnancies` → `questionnaires`  | 1:N  | Cada gestação acumula check-ins periódicos            |
 
 ---
 
@@ -214,20 +227,20 @@ CREATE TABLE app.questionnaire_responses (
 O NestJS **monta o payload completo** combinando dados estáticos do perfil do usuário com o check-in parcial atual antes de publicar na fila RabbitMQ para o worker em Python:
 
 ```
-questionario_respostas.peso_atual        → nu_peso
+questionnaires.current_weight            → nu_peso
 user.height                              → nu_altura
 user.preGestationalWeight / altura²      → nu_imc_pre_gestacional
 user.raceColor                           → raca_cor
 user.educationLevel                      → escolaridade
-user.location?.ibgeCode                  → cod_municipio (lookup de features municipais)
-questionario_respostas.flag_anti_hiv     → flag_anti_hiv
+user_locations.ibge_code                 → cod_municipio (lookup de features municipais)
+questionnaires.anti_hiv_flag             → flag_anti_hiv
 ```
 
 Após o retorno enriquecido do Flask, o NestJS aplica o conceito de _Event Sourcing_:
 
-1. **Histórico (Timeline):** Persiste o resultado estruturado (`cluster_id`, `cluster_nome_app`, `cor_hex`, JSON de `recomendacoes` e JSON de `metricas`) diretamente na tabela `questionario_respostas`.
-2. **Cache da Dashboard:** Atualiza a tabela `gestacoes` salvando os dados de status no modelo `current_*` (ex: `current_cluster_id`, `current_hex_color`).
-3. O App Frontend consome a **Gestação** para exibir o status atual de forma veloz na tela inicial, e consome a listagem de **Questionários** para montar o feed/diário histórico com as dicas armazenadas em JSONB.
+1. **Histórico (Timeline):** Persiste o resultado estruturado (`cluster_id`, `cluster_name`, `hex_color`, `risk_level`, JSONB de `recommendations` e `metrics`) diretamente na tabela `questionnaires`.
+2. **Cache da Dashboard:** Atualiza a tabela `pregnancies` salvando os dados de status nos campos `current_*` (`current_cluster_id`, `current_cluster_name`, `current_risk_level`, `current_hex_color`).
+3. O App Flutter consome a **Gestação** para exibir o status atual de forma veloz na tela inicial, e consome a listagem de **Questionários** para montar o feed/diário histórico com as dicas armazenadas em JSONB.
 
 ---
 

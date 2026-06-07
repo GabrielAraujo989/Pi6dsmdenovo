@@ -1,7 +1,7 @@
 # 08 - Especificação Técnica: Backend (NestJS & Flask)
 
-> **Última atualização:** 2026-05-25
-> **Status:** Modelo K=3 treinado e validado — API Flask pronta para integração.
+> **Última atualização:** 2026-06-07
+> **Status:** Todos os módulos implementados — Auth · Users · Pregnancies · Questionnaires · Classification (RabbitMQ)
 
 ---
 
@@ -10,12 +10,113 @@
 O backend do **Maternar** é composto por dois serviços para separar a lógica de negócio
 da lógica de inteligência artificial:
 
-- **NestJS**: gerenciamento de usuárias, autenticação, persistência, notificações
+- **NestJS**: gerenciamento de usuárias, autenticação, persistência, proxy para o Worker de IA
 - **Flask (Python)**: inferência do K-Means K=3, normalização, classificação de risco
+
+### 1.1 Endpoints Implementados
+
+| Método | Endpoint | Descrição | Auth |
+|--------|----------|-----------|------|
+| POST | `/auth/login` | Autenticação JWT | Não |
+| POST | `/users/register` | Cadastro de gestante + ViaCEP | Não |
+| GET | `/users/profile` | Perfil completo da usuária autenticada | Bearer JWT |
+| PATCH | `/users/profile` | Atualização parcial do perfil | Bearer JWT |
+| POST | `/pregnancy/create` | Criar ciclo gestacional | Bearer JWT |
+| GET | `/pregnancy` | Listar gestações da usuária | Bearer JWT |
+| POST | `/questionnaires/:pregnancyId/submit` | Check-in com classificação IA via RabbitMQ | Bearer JWT |
+| GET | `/questionnaires/pregnancy/:pregnancyId` | Histórico de check-ins de uma gestação | Bearer JWT |
+| POST | `/classification` | Classificação de perfil gestacional via IA | Bearer JWT |
+
+### 1.2 Endpoints Pendentes (futuras sprints)
+
+| Método | Endpoint | Descrição | Auth |
+|--------|----------|-----------|------|
+| POST | `/auth/refresh` | Renovar access token | Refresh JWT |
+| POST | `/auth/logout` | Revogar refresh token | Bearer JWT |
+| GET | `/users/my-data` | Exportar dados pessoais (LGPD) | Bearer JWT |
+| DELETE | `/users/me` | Solicitar exclusão de dados (LGPD) | Bearer JWT |
 
 ---
 
 ## 2. Serviço de Gerenciamento (NestJS)
+
+- **Tecnologia:** NestJS v11 / TypeScript 5
+- **Banco de Dados:** PostgreSQL via Prisma 7
+- **Responsabilidades implementadas:**
+  - Cadastro e autenticação de gestantes (JWT + bcrypt)
+  - Enriquecimento geográfico via ViaCEP (armazena ibgeCode em `user_locations`)
+  - Gestão de ciclos gestacionais (pregnancies)
+  - Check-ins periódicos com classificação IA em tempo real (questionnaires)
+  - Classificação direta de perfil gestacional (`classification`)
+  - Integração com Worker Flask via RabbitMQ (padrão RPC com correlation_id)
+
+### 2.1 Endpoint de Classificação — Implementado
+
+O fluxo do endpoint `POST /classification`:
+
+1. Autentica a gestante via Bearer JWT
+2. Busca dados do perfil (height, preGestationalWeight, raceColor, educationLevel) e `UserLocation.ibgeCode`
+3. Cria automaticamente uma gestação ativa se a usuária não tiver nenhuma
+4. Publica o payload na fila RabbitMQ `maternar.classificar` (padrão RPC com timeout de 10s)
+5. Recebe resposta do Worker Flask e persiste o resultado como QuestionnaireResponse
+6. Retorna a classificação completa com recomendações e métricas
+
+**Request (Flutter → NestJS):**
+```json
+{
+  "nu_peso": 72.5,
+  "nu_altura": 1.62,
+  "nu_imc_pre_gestacional": 24.1,
+  "raca_cor": 4,
+  "escolaridade": 4,
+  "flag_anti_hiv": 0
+}
+```
+
+**Payload interno (NestJS → Flask):**
+```json
+{
+  "nu_peso": 72.5,
+  "nu_altura": 1.62,
+  "nu_imc_pre_gestacional": 24.1,
+  "raca_cor": 4,
+  "escolaridade": 4,
+  "cod_municipio": "350950",
+  "flag_anti_hiv": 0
+}
+```
+
+> O `cod_municipio` é preenchido automaticamente pelo NestJS a partir de `user_locations.ibge_code`.  
+> A gestante não precisa informar seu município — ele já foi capturado durante o cadastro via CEP → ViaCEP → IBGE.
+
+**Resposta (NestJS → Flutter):** repassa o JSON retornado pelo Flask:
+```json
+{
+  "cluster_id": 1,
+  "cluster_nome_app": "Caminho Seguro",
+  "nivel_risco": "moderado",
+  "cor_hex": "#A8D8EA",
+  "recomendacoes": [
+    { "categoria": "nutricao", "texto": "Monitorar ganho de peso" },
+    { "categoria": "consultas", "texto": "Garantir minimo de 6 consultas pre-natal (SUS)" }
+  ]
+}
+```
+
+### 2.2 Campos do Questionário → Modelo de IA
+
+| Campo coletado no app | Campo enviado ao Flask | Fonte |
+|----------------------|----------------------|-------|
+| Peso atual (kg) | `nu_peso` | Formulário |
+| Peso pré-gestacional (kg) | Calcula `nu_imc_pre_gestacional` | Formulário |
+| Altura (cm → m) | `nu_altura` | Formulário |
+| Raça/cor (1-5) | `raca_cor` | Formulário |
+| Escolaridade (1-5) | `escolaridade` | Formulário |
+| CEP → ViaCEP → IBGE | `cod_municipio` | **Backend injeta automaticamente** |
+
+---
+
+## 3. Serviço de Gerenciamento (NestJS)
 
 - **Tecnologia:** NestJS (API Routes) / TypeScript
 - **Banco de Dados:** PostgreSQL (schema `app`) via Prisma
@@ -279,17 +380,18 @@ ml_maternar.municipio_risco    -- 3.479 municípios com taxas de risco
 ## 8. Variáveis de Ambiente
 
 ```env
-# Flask
-FLASK_PORT=5001
-MODEL_PATH=/app/models/kmeans_k3.pkl
-SCALER_PATH=/app/models/scaler_maternar.pkl
-PCA_PATH=/app/models/pca_maternar.pkl
-DATABASE_URL=postgresql://user:pass@db:5432/maternar
+# NestJS (arquivo .env — ver .env.example)
+DATABASE_URL="postgresql://admin:password@localhost:5490/gestasus_db?schema=public"
+JWT_SECRET="chave_secreta_minimo_32_bytes"
+PORT=3000
 
-# NestJS
-FLASK_INTERNAL_URL=http://flask:5001
-NEXTAUTH_SECRET=...
-POSTGRES_URL=postgresql://user:pass@db:5432/maternar
+# RabbitMQ (conexão com Worker Flask)
+RABBITMQ_HOST=seu.host
+RABBITMQ_PORT=5672
+RABBITMQ_USER=usuario
+RABBITMQ_PASSWORD=senha
+RABBITMQ_VHOST=/
+RABBITMQ_QUEUE=maternar.classificar
 ```
 
 ---

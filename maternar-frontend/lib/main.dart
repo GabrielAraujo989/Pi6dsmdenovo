@@ -166,7 +166,7 @@ class SignupScreen extends StatefulWidget {
 }
 
 class _SignupScreenState extends State<SignupScreen> {
-  final BackendApi _api = const BackendApi();
+  final BackendApi _api = BackendApi();
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
@@ -184,6 +184,26 @@ class _SignupScreenState extends State<SignupScreen> {
   bool _hideConfirmPassword = true;
   bool _isFormattingPhone = false;
   bool _isSubmitting = false;
+
+  // Raça/cor e escolaridade conforme DATASUS (obrigatórios no backend)
+  int _raceColor = 4; // 4 = Parda
+  int _educationLevel = 4; // 4 = Médio completo
+
+  static const Map<int, String> _raceColorLabels = {
+    1: 'Branca',
+    2: 'Preta',
+    3: 'Amarela',
+    4: 'Parda',
+    5: 'Indigena',
+  };
+
+  static const Map<int, String> _educationLevelLabels = {
+    1: 'Sem escolaridade',
+    2: 'Fundamental incompleto',
+    3: 'Fundamental completo',
+    4: 'Medio completo',
+    5: 'Superior completo',
+  };
 
   static final RegExp _emailRegex = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$');
   static final RegExp _specialCharRegex = RegExp(r'[!@#$%^&*(),.?":{}|<>]');
@@ -460,11 +480,16 @@ class _SignupScreenState extends State<SignupScreen> {
 
     try {
       final birthDateIso = _toIsoDate(_birthDateController.text.trim());
+      final phone = _phoneController.text.replaceAll(RegExp(r'\D'), '');
       await _api.register(
         name: _nameController.text.trim(),
         email: _emailController.text.trim(),
         password: _passwordController.text,
         birthDateIso: birthDateIso,
+        zipCode: _zipCodeController.text.replaceAll(RegExp(r'\D'), ''),
+        raceColor: _raceColor,
+        educationLevel: _educationLevel,
+        phone: phone.isNotEmpty ? phone : null,
       );
 
       final loginResult = await _api.login(
@@ -644,6 +669,34 @@ class _SignupScreenState extends State<SignupScreen> {
                 ),
               ),
               LabeledField(
+                label: 'Raca/cor',
+                child: DropdownButtonFormField<int>(
+                  value: _raceColor,
+                  decoration: const InputDecoration(hintText: 'Selecione'),
+                  items: _raceColorLabels.entries
+                      .map((e) => DropdownMenuItem(
+                            value: e.key,
+                            child: Text(e.value),
+                          ))
+                      .toList(),
+                  onChanged: (v) => setState(() => _raceColor = v ?? 4),
+                ),
+              ),
+              LabeledField(
+                label: 'Escolaridade',
+                child: DropdownButtonFormField<int>(
+                  value: _educationLevel,
+                  decoration: const InputDecoration(hintText: 'Selecione'),
+                  items: _educationLevelLabels.entries
+                      .map((e) => DropdownMenuItem(
+                            value: e.key,
+                            child: Text(e.value),
+                          ))
+                      .toList(),
+                  onChanged: (v) => setState(() => _educationLevel = v ?? 4),
+                ),
+              ),
+              LabeledField(
                 label: 'Senha',
                 child: TextFormField(
                   controller: _passwordController,
@@ -776,7 +829,7 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final BackendApi _api = const BackendApi();
+  final BackendApi _api = BackendApi();
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
@@ -960,11 +1013,11 @@ class MainAppNavigation extends StatefulWidget {
 class _MainAppNavigationState extends State<MainAppNavigation> {
   int _selectedIndex = 0;
 
-  final List<Widget> _screens = const [
+  final List<Widget> _screens = [
     HomeDashboardScreen(),
-    HealthMetricsScreen(),
-    ConsultationHistoryScreen(),
-    ProfileSettingsScreen(),
+    const HealthMetricsScreen(),
+    const ConsultationHistoryScreen(),
+    const ProfileSettingsScreen(),
   ];
 
   void _onNavItemTapped(int index) {
@@ -998,10 +1051,10 @@ class _MainAppNavigationState extends State<MainAppNavigation> {
 }
 
 class HomeDashboardScreen extends StatefulWidget {
-  const HomeDashboardScreen({
-    this.dataSource = const ApiHomeDashboardDataSource(),
+  HomeDashboardScreen({
+    HomeDashboardDataSource? dataSource,
     super.key,
-  });
+  }) : dataSource = dataSource ?? ApiHomeDashboardDataSource();
 
   final HomeDashboardDataSource dataSource;
 
@@ -1603,174 +1656,226 @@ class _MetricCard extends StatelessWidget {
   }
 }
 
-class ConsultationHistoryScreen extends StatelessWidget {
+class ConsultationHistoryScreen extends StatefulWidget {
   const ConsultationHistoryScreen({super.key});
 
-  void _openScheduleDialog(BuildContext context) {
-    showDialog<void>(
-      context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          title: const Text('Agendar consulta'),
-          content: const Text(
-            'Fluxo de agendamento em construcao. Em breve voce podera escolher data, horario e especialidade.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('Fechar'),
-            ),
-          ],
-        );
-      },
-    );
+  @override
+  State<ConsultationHistoryScreen> createState() =>
+      _ConsultationHistoryScreenState();
+}
+
+class _ConsultationHistoryScreenState extends State<ConsultationHistoryScreen> {
+  final BackendApi _api = BackendApi();
+  List<QuestionnaireRecord>? _records;
+  bool _isLoading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadHistory();
+  }
+
+  Future<void> _loadHistory() async {
+    final token = AppSession.token;
+    if (token == null) {
+      setState(() => _isLoading = false);
+      return;
+    }
+    try {
+      final pregnancies = await _api.getPregnancies(token);
+      final active = pregnancies.where((p) => p.isActive).toList();
+      if (active.isEmpty) {
+        setState(() => _isLoading = false);
+        return;
+      }
+      final records =
+          await _api.getQuestionnaires(token: token, pregnancyId: active.first.id);
+      setState(() {
+        _records = records;
+        _isLoading = false;
+      });
+    } on ApiClientException catch (e) {
+      setState(() {
+        _error = e.message;
+        _isLoading = false;
+      });
+    } catch (_) {
+      setState(() {
+        _error = 'Nao foi possivel carregar o historico.';
+        _isLoading = false;
+      });
+    }
+  }
+
+  Color _hexToColor(String hex) {
+    try {
+      final h = hex.replaceFirst('#', '');
+      return Color(int.parse('FF$h', radix: 16));
+    } catch (_) {
+      return GestCareColors.mint;
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final consultations = [
-      {
-        'date': '15 de Abril',
-        'professional': 'Dra. Marina Silva',
-        'type': 'Consulta Pre-Natal',
-        'notes': 'Tudo normal, bebe em posicao correta',
-        'done': true,
-      },
-      {
-        'date': '25 de Abril',
-        'professional': 'Dra. Marina Silva',
-        'type': 'Ultrassom',
-        'notes': 'Agendado',
-        'done': false,
-      },
-      {
-        'date': '10 de Maio',
-        'professional': 'Dr. Carlos Mendes',
-        'type': 'Consulta Pre-Natal',
-        'notes': 'Agendado',
-        'done': false,
-      },
-    ];
-
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Minhas Consultas'),
+        title: const Text('Historico de Avaliações'),
         backgroundColor: Colors.transparent,
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _openScheduleDialog(context),
-        backgroundColor: GestCareColors.deepTeal,
-        foregroundColor: Colors.white,
-        icon: const Icon(Icons.add),
-        label: const Text('Agendar'),
-      ),
       body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
-          children: [
-            Text(
-              'Historico e proximas consultas',
-              style: Theme.of(
-                context,
-              ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 16),
-            for (int i = 0; i < consultations.length; i++) ...[
-              _ConsultationTile(
-                date: consultations[i]['date'] as String,
-                professional: consultations[i]['professional'] as String,
-                type: consultations[i]['type'] as String,
-                notes: consultations[i]['notes'] as String,
-                isDone: consultations[i]['done'] as bool,
+        child: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : _error != null
+                ? Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.wifi_off,
+                              size: 48, color: GestCareColors.textMuted),
+                          const SizedBox(height: 12),
+                          Text(_error!,
+                              textAlign: TextAlign.center,
+                              style: Theme.of(context).textTheme.bodyMedium),
+                          const SizedBox(height: 16),
+                          OutlinedButton(
+                            onPressed: () {
+                              setState(() {
+                                _isLoading = true;
+                                _error = null;
+                              });
+                              _loadHistory();
+                            },
+                            child: const Text('Tentar novamente'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                : (_records == null || _records!.isEmpty)
+                    ? Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(32),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.assignment_outlined,
+                                  size: 56, color: GestCareColors.textMuted),
+                              const SizedBox(height: 12),
+                              Text(
+                                'Nenhuma avaliacao registrada ainda.',
+                                textAlign: TextAlign.center,
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodyMedium
+                                    ?.copyWith(color: GestCareColors.textMuted),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                'Preencha o questionario para ver seu historico aqui.',
+                                textAlign: TextAlign.center,
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                            ],
+                          ),
+                        ),
+                      )
+                    : ListView(
+                        padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+                        children: [
+                          Text(
+                            'Historico de classificacoes',
+                            style: Theme.of(context)
+                                .textTheme
+                                .headlineSmall
+                                ?.copyWith(fontWeight: FontWeight.w700),
+                          ),
+                          const SizedBox(height: 16),
+                          for (final record in _records!) ...[
+                            Container(
+                              margin: const EdgeInsets.only(bottom: 12),
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border(
+                                  left: BorderSide(
+                                    color: record.hexColor != null
+                                        ? _hexToColor(record.hexColor!)
+                                        : GestCareColors.mint,
+                                    width: 4,
+                                  ),
+                                ),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Text(
+                                        record.clusterName ?? 'Em processamento',
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .titleSmall
+                                            ?.copyWith(
+                                                fontWeight: FontWeight.w700),
+                                      ),
+                                      Text(
+                                        _formatBrazilianDate(record.responseDate),
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodySmall
+                                            ?.copyWith(
+                                                color: GestCareColors.textMuted),
+                                      ),
+                                    ],
+                                  ),
+                                  if (record.riskLevel != null) ...[
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'Risco: ${record.riskLevel}',
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall
+                                          ?.copyWith(
+                                              color: GestCareColors.textMuted),
+                                    ),
+                                  ],
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    'Peso: ${record.currentWeight.toStringAsFixed(1)} kg'
+                                    '${record.calculatedImc != null ? '   IMC: ${record.calculatedImc!.toStringAsFixed(1)}' : ''}',
+                                    style:
+                                        Theme.of(context).textTheme.bodySmall,
+                                  ),
+                                  if (record.recommendations != null &&
+                                      record.recommendations!.isNotEmpty) ...[
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      record.recommendations!.first,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall
+                                          ?.copyWith(
+                                              color: GestCareColors.textMuted),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
               ),
-              if (i < consultations.length - 1) const SizedBox(height: 12),
-            ],
-          ],
-        ),
-      ),
-    );
+            );
   }
 }
 
-class _ConsultationTile extends StatelessWidget {
-  final String date;
-  final String professional;
-  final String type;
-  final String notes;
-  final bool isDone;
-
-  const _ConsultationTile({
-    required this.date,
-    required this.professional,
-    required this.type,
-    required this.notes,
-    required this.isDone,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: isDone ? GestCareColors.mint : const Color(0xFFE0E6E3),
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(
-                isDone ? Icons.check_circle : Icons.calendar_today,
-                color: isDone
-                    ? GestCareColors.deepTeal
-                    : GestCareColors.textMuted,
-                size: 20,
-              ),
-              const SizedBox(width: 10),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    date,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  Text(
-                    type,
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: GestCareColors.textMuted,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Text(
-            professional,
-            style: Theme.of(
-              context,
-            ).textTheme.bodySmall?.copyWith(color: GestCareColors.textMuted),
-          ),
-          const SizedBox(height: 6),
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: isDone ? const Color(0xFFF0F9F6) : const Color(0xFFFAF9F7),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Text(notes, style: Theme.of(context).textTheme.labelSmall),
-          ),
-        ],
-      ),
-    );
-  }
-}
 
 class ProfileSettingsScreen extends StatefulWidget {
   const ProfileSettingsScreen({super.key});
@@ -1780,12 +1885,33 @@ class ProfileSettingsScreen extends StatefulWidget {
 }
 
 class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
-  final BackendApi _api = const BackendApi();
+  final BackendApi _api = BackendApi();
 
   bool _isLoading = true;
   String _name = 'Gestante';
   String _email = '';
   DateTime? _dueDate;
+  String? _phone;
+  double? _height;
+  double? _preWeight;
+  int _raceColor = 1;
+  int _educationLevel = 1;
+
+  static const Map<int, String> _raceColorLabels = {
+    1: 'Branca',
+    2: 'Preta',
+    3: 'Amarela',
+    4: 'Parda',
+    5: 'Indigena',
+  };
+
+  static const Map<int, String> _educationLevelLabels = {
+    1: 'Sem escolaridade',
+    2: 'Fundamental incompleto',
+    3: 'Fundamental completo',
+    4: 'Medio completo',
+    5: 'Superior completo',
+  };
 
   @override
   void initState() {
@@ -1795,15 +1921,33 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
 
   Future<void> _loadProfile() async {
     try {
-      if (!AppSession.hasProfile && AppSession.token != null) {
-        await _syncAuthenticatedProfile(_api, AppSession.token!);
+      final token = AppSession.token;
+      if (token != null) {
+        final profile = await _api.profile(token);
+        await AppSession.saveProfile(
+          name: profile.name,
+          email: profile.email,
+          dueDate: profile.birthDate,
+        );
+        if (mounted) {
+          setState(() {
+            _name = profile.name;
+            _email = profile.email;
+            _dueDate = profile.birthDate;
+            _phone = profile.phone;
+            _height = profile.height;
+            _preWeight = profile.preGestationalWeight;
+            _raceColor = profile.raceColor;
+            _educationLevel = profile.educationLevel;
+          });
+        }
+      } else {
+        setState(() {
+          _name = AppSession.profileName ?? _name;
+          _email = AppSession.profileEmail ?? _email;
+          _dueDate = AppSession.dueDate;
+        });
       }
-
-      setState(() {
-        _name = AppSession.profileName ?? _name;
-        _email = AppSession.profileEmail ?? _email;
-        _dueDate = AppSession.dueDate;
-      });
     } catch (_) {
       setState(() {
         _name = AppSession.profileName ?? _name;
@@ -1811,9 +1955,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
         _dueDate = AppSession.dueDate;
       });
     } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -1847,8 +1989,13 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
 
   Future<void> _openEditProfileDialog() async {
     final nameController = TextEditingController(text: _name);
-    final emailController = TextEditingController(text: _email);
-    DateTime? selectedDueDate = _dueDate;
+    final phoneController = TextEditingController(text: _phone ?? '');
+    final heightController = TextEditingController(
+      text: _height != null ? _height!.toStringAsFixed(2) : '',
+    );
+    final preWeightController = TextEditingController(
+      text: _preWeight != null ? _preWeight!.toStringAsFixed(1) : '',
+    );
     final formKey = GlobalKey<FormState>();
     var isSubmitting = false;
 
@@ -1859,21 +2006,6 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
       return null;
     }
 
-    String? validateEmail(String? value) {
-      final text = value?.trim() ?? '';
-      if (text.isEmpty) return 'Informe o e-mail.';
-      if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(text)) {
-        return 'E-mail invalido.';
-      }
-      return null;
-    }
-
-    String? validateDueDate() {
-      if (selectedDueDate == null) return 'Selecione a data prevista do parto.';
-      if (selectedDueDate!.year < 2026) return 'Use uma data a partir de 2026.';
-      return null;
-    }
-
     if (!mounted) return;
 
     await showDialog<void>(
@@ -1881,59 +2013,60 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
       builder: (dialogContext) {
         return StatefulBuilder(
           builder: (dialogContext, setDialogState) {
-            Future<void> pickDueDate() async {
-              final minimumDate = DateTime(2026, 1, 1);
-              final maximumDate = DateTime(2099, 12, 31);
-              final now = DateTime.now();
-              final initialDate = selectedDueDate != null &&
-                      !selectedDueDate!.isBefore(minimumDate)
-                  ? selectedDueDate!
-                  : (now.isBefore(minimumDate) ? minimumDate : now);
-
-              final picked = await showDatePicker(
-                context: dialogContext,
-                initialDate: initialDate,
-                firstDate: minimumDate,
-                lastDate: maximumDate,
-                helpText: 'Data prevista do parto',
-                cancelText: 'Cancelar',
-                confirmText: 'Selecionar',
-              );
-
-              if (picked == null) return;
-              setDialogState(() => selectedDueDate = picked);
-            }
-
             Future<void> saveChanges() async {
               final isValid = formKey.currentState?.validate() ?? false;
-              final dueDateError = validateDueDate();
-
-              if (!isValid || dueDateError != null || isSubmitting) {
-                if (dueDateError != null) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text(dueDateError)),
-                  );
-                }
-                return;
-              }
+              if (!isValid || isSubmitting) return;
 
               setDialogState(() => isSubmitting = true);
 
-              await AppSession.saveProfile(
-                name: nameController.text.trim(),
-                email: emailController.text.trim(),
-                dueDate: selectedDueDate!,
-              );
-
-              if (!mounted) return;
-              setState(() {
-                _name = AppSession.profileName ?? _name;
-                _email = AppSession.profileEmail ?? _email;
-                _dueDate = AppSession.dueDate;
-              });
-              if (dialogContext.mounted) {
-                Navigator.pop(dialogContext);
+              try {
+                final token = AppSession.token;
+                if (token != null) {
+                  final heightVal = double.tryParse(
+                      heightController.text.replaceAll(',', '.'));
+                  final preWeightVal = double.tryParse(
+                      preWeightController.text.replaceAll(',', '.'));
+                  final updated = await _api.updateProfile(
+                    token: token,
+                    name: nameController.text.trim(),
+                    phone: phoneController.text.isNotEmpty
+                        ? phoneController.text
+                        : null,
+                    height: heightVal,
+                    preGestationalWeight: preWeightVal,
+                  );
+                  await AppSession.saveProfile(
+                    name: updated.name,
+                    email: updated.email,
+                    dueDate: updated.birthDate,
+                  );
+                  if (!mounted) return;
+                  setState(() {
+                    _name = updated.name;
+                    _email = updated.email;
+                    _dueDate = updated.birthDate;
+                    _phone = updated.phone;
+                    _height = updated.height;
+                    _preWeight = updated.preGestationalWeight;
+                  });
+                } else {
+                  await AppSession.saveProfile(
+                    name: nameController.text.trim(),
+                    email: _email,
+                    dueDate: _dueDate ?? DateTime.now(),
+                  );
+                  if (!mounted) return;
+                  setState(() => _name = nameController.text.trim());
+                }
+              } on ApiClientException catch (e) {
+                if (!mounted) return;
+                ScaffoldMessenger.of(context)
+                    .showSnackBar(SnackBar(content: Text(e.message)));
+              } finally {
+                setDialogState(() => isSubmitting = false);
               }
+
+              if (dialogContext.mounted) Navigator.pop(dialogContext);
             }
 
             return AlertDialog(
@@ -1947,38 +2080,32 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                       TextFormField(
                         controller: nameController,
                         validator: validateName,
+                        decoration: const InputDecoration(labelText: 'Nome'),
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: phoneController,
+                        keyboardType: TextInputType.phone,
                         decoration: const InputDecoration(
-                          labelText: 'Nome',
+                          labelText: 'Telefone (opcional)',
                         ),
                       ),
                       const SizedBox(height: 12),
                       TextFormField(
-                        controller: emailController,
-                        validator: validateEmail,
-                        keyboardType: TextInputType.emailAddress,
+                        controller: heightController,
+                        keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true),
                         decoration: const InputDecoration(
-                          labelText: 'E-mail',
+                          labelText: 'Altura em metros (ex: 1.65)',
                         ),
                       ),
                       const SizedBox(height: 12),
-                      InkWell(
-                        onTap: pickDueDate,
-                        child: InputDecorator(
-                          decoration: InputDecoration(
-                            labelText: 'Data prevista do parto',
-                            errorText: validateDueDate(),
-                          ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(
-                                selectedDueDate == null
-                                    ? 'Selecionar data'
-                                    : _formatBrazilianDate(selectedDueDate!),
-                              ),
-                              const Icon(Icons.calendar_month),
-                            ],
-                          ),
+                      TextFormField(
+                        controller: preWeightController,
+                        keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true),
+                        decoration: const InputDecoration(
+                          labelText: 'Peso pre-gestacional em kg',
                         ),
                       ),
                     ],
@@ -2065,6 +2192,37 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                   ),
                 ],
               ),
+            ),
+            const SizedBox(height: 16),
+            _SettingRow(
+              icon: Icons.phone,
+              title: 'Telefone',
+              subtitle: (_phone != null && _phone!.isNotEmpty)
+                  ? _phone!
+                  : 'Nao informado',
+            ),
+            _SettingRow(
+              icon: Icons.height,
+              title: 'Altura',
+              subtitle:
+                  _height != null ? '${_height!.toStringAsFixed(2)} m' : 'Nao informada',
+            ),
+            _SettingRow(
+              icon: Icons.monitor_weight,
+              title: 'Peso pre-gestacional',
+              subtitle: _preWeight != null
+                  ? '${_preWeight!.toStringAsFixed(1)} kg'
+                  : 'Nao informado',
+            ),
+            _SettingRow(
+              icon: Icons.diversity_3,
+              title: 'Raca/cor',
+              subtitle: _raceColorLabels[_raceColor] ?? 'Nao informada',
+            ),
+            _SettingRow(
+              icon: Icons.school,
+              title: 'Escolaridade',
+              subtitle: _educationLevelLabels[_educationLevel] ?? 'Nao informada',
             ),
             const SizedBox(height: 24),
             Text(
@@ -3121,14 +3279,66 @@ class QuestionnaireScreen extends StatefulWidget {
 }
 
 class _QuestionnaireScreenState extends State<QuestionnaireScreen> {
-  final TextEditingController _ageController = TextEditingController();
-  String _lastSeries = '';
+  final _formKey = GlobalKey<FormState>();
+  final _weightController = TextEditingController();
+  final _preWeightController = TextEditingController();
+  final _heightController = TextEditingController();
+
+  // Raça/cor conforme tabela DATASUS: 1=Branca 2=Preta 3=Amarela 4=Parda 5=Indígena
+  int _racaCor = 4;
+  // Escolaridade conforme DATASUS: 1=Sem escolaridade … 5=Superior completo
+  int _escolaridade = 4;
   bool _firstPregnancy = true;
 
   @override
   void dispose() {
-    _ageController.dispose();
+    _weightController.dispose();
+    _preWeightController.dispose();
+    _heightController.dispose();
     super.dispose();
+  }
+
+  String? _validateWeight(String? v) {
+    final n = double.tryParse((v ?? '').replaceAll(',', '.'));
+    if (n == null) return 'Informe um valor numerico.';
+    if (n < 30 || n > 250) return 'Peso deve estar entre 30 e 250 kg.';
+    return null;
+  }
+
+  String? _validatePreWeight(String? v) {
+    final n = double.tryParse((v ?? '').replaceAll(',', '.'));
+    if (n == null) return 'Informe um valor numerico.';
+    if (n < 30 || n > 250) return 'Peso deve estar entre 30 e 250 kg.';
+    return null;
+  }
+
+  String? _validateHeight(String? v) {
+    final n = double.tryParse((v ?? '').replaceAll(',', '.'));
+    if (n == null) return 'Informe um valor numerico.';
+    if (n < 130 || n > 215) return 'Altura deve estar entre 130 e 215 cm.';
+    return null;
+  }
+
+  void _submit() {
+    if (!(_formKey.currentState?.validate() ?? false)) return;
+
+    final weight = double.parse(_weightController.text.replaceAll(',', '.'));
+    final preWeight = double.parse(_preWeightController.text.replaceAll(',', '.'));
+    final heightCm = double.parse(_heightController.text.replaceAll(',', '.'));
+    final heightM = heightCm / 100.0;
+    final imcPre = preWeight / (heightM * heightM);
+
+    Navigator.pushNamed(
+      context,
+      '/processing',
+      arguments: {
+        'weight': weight,
+        'height': heightM,
+        'imcPreGestacional': imcPre,
+        'racaCor': _racaCor,
+        'escolaridade': _escolaridade,
+      },
+    );
   }
 
   @override
@@ -3139,122 +3349,156 @@ class _QuestionnaireScreenState extends State<QuestionnaireScreen> {
         title: const Text('Conhecendo Voce'),
       ),
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
-          child: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const LinearProgressIndicator(
-                  value: 0.2,
-                  minHeight: 6,
-                  borderRadius: BorderRadius.all(Radius.circular(8)),
-                  color: GestCareColors.deepTeal,
-                  backgroundColor: Color(0xFFE2ECE8),
+        child: Form(
+          key: _formKey,
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+            children: [
+              const LinearProgressIndicator(
+                value: 0.4,
+                minHeight: 6,
+                borderRadius: BorderRadius.all(Radius.circular(8)),
+                color: GestCareColors.deepTeal,
+                backgroundColor: Color(0xFFE2ECE8),
+              ),
+              const SizedBox(height: 24),
+              Text(
+                'Sua jornada,\nseu cuidado.',
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                  fontWeight: FontWeight.w700,
                 ),
-                const SizedBox(height: 24),
-                Text(
-                  'Sua jornada,\nseu cuidado.',
-                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Compartilhe alguns dados para recebermos orientacoes personalizadas para voce.',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: GestCareColors.textMuted,
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  'Conte-nos um pouco sobre voce para personalizarmos seu Sanctuary.',
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: GestCareColors.textMuted,
-                  ),
+              ),
+              const SizedBox(height: 18),
+              LabeledField(
+                label: 'Peso atual (kg)',
+                child: TextFormField(
+                  controller: _weightController,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  textInputAction: TextInputAction.next,
+                  validator: _validateWeight,
+                  decoration: const InputDecoration(hintText: 'Ex: 72.5'),
                 ),
-                const SizedBox(height: 18),
-                LabeledField(
-                  label: 'Sua idade',
-                  child: TextField(
-                    controller: _ageController,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(hintText: 'Ex: 28'),
-                  ),
+              ),
+              LabeledField(
+                label: 'Peso antes de engravidar (kg)',
+                child: TextFormField(
+                  controller: _preWeightController,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  textInputAction: TextInputAction.next,
+                  validator: _validatePreWeight,
+                  decoration: const InputDecoration(hintText: 'Ex: 65.0'),
                 ),
-                LabeledField(
-                  label: 'Ultima serie concluida',
-                  child: DropdownButtonFormField<String>(
-                    value: _lastSeries.isEmpty ? null : _lastSeries,
-                    decoration: const InputDecoration(),
-                    items: const [
-                      DropdownMenuItem(
-                        value: 'Ensino fundamental',
-                        child: Text('Ensino fundamental'),
-                      ),
-                      DropdownMenuItem(
-                        value: 'Ensino medio',
-                        child: Text('Ensino medio'),
-                      ),
-                      DropdownMenuItem(
-                        value: 'Ensino superior',
-                        child: Text('Ensino superior'),
-                      ),
-                    ],
-                    onChanged: (value) =>
-                        setState(() => _lastSeries = value ?? ''),
-                  ),
+              ),
+              LabeledField(
+                label: 'Altura (cm)',
+                child: TextFormField(
+                  controller: _heightController,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  textInputAction: TextInputAction.next,
+                  validator: _validateHeight,
+                  decoration: const InputDecoration(hintText: 'Ex: 162'),
                 ),
-                LabeledField(
-                  label: 'Consultas de pre-natal realizadas',
-                  child: TextField(
-                    decoration: const InputDecoration(hintText: '0'),
-                    keyboardType: TextInputType.number,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  'Primeira gestacao?',
-                  style: Theme.of(
-                    context,
-                  ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
-                ),
-                const SizedBox(height: 8),
-                SegmentedButton<bool>(
-                  segments: const [
-                    ButtonSegment(value: true, label: Text('Sim')),
-                    ButtonSegment(value: false, label: Text('Nao')),
+              ),
+              LabeledField(
+                label: 'Raca/cor',
+                child: DropdownButtonFormField<int>(
+                  value: _racaCor,
+                  decoration: const InputDecoration(),
+                  items: const [
+                    DropdownMenuItem(value: 1, child: Text('Branca')),
+                    DropdownMenuItem(value: 2, child: Text('Preta')),
+                    DropdownMenuItem(value: 3, child: Text('Amarela')),
+                    DropdownMenuItem(value: 4, child: Text('Parda')),
+                    DropdownMenuItem(value: 5, child: Text('Indigena')),
                   ],
-                  selected: {_firstPregnancy},
-                  onSelectionChanged: (values) {
-                    setState(() => _firstPregnancy = values.first);
-                  },
+                  onChanged: (v) => setState(() => _racaCor = v ?? 4),
                 ),
-                const SizedBox(height: 24),
-                Container(
-                  height: 90,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(20),
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFFD2F4EA), Color(0xFFF1F9F6)],
-                    ),
-                  ),
+              ),
+              LabeledField(
+                label: 'Escolaridade',
+                child: DropdownButtonFormField<int>(
+                  value: _escolaridade,
+                  decoration: const InputDecoration(),
+                  items: const [
+                    DropdownMenuItem(value: 1, child: Text('Sem escolaridade')),
+                    DropdownMenuItem(value: 2, child: Text('Fundamental incompleto')),
+                    DropdownMenuItem(value: 3, child: Text('Fundamental completo')),
+                    DropdownMenuItem(value: 4, child: Text('Ensino medio')),
+                    DropdownMenuItem(value: 5, child: Text('Ensino superior')),
+                  ],
+                  onChanged: (v) => setState(() => _escolaridade = v ?? 4),
                 ),
-                const SizedBox(height: 16),
-                Row(
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Primeira gestacao?',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 8),
+              SegmentedButton<bool>(
+                segments: const [
+                  ButtonSegment(value: true, label: Text('Sim')),
+                  ButtonSegment(value: false, label: Text('Nao')),
+                ],
+                selected: {_firstPregnancy},
+                onSelectionChanged: (values) {
+                  setState(() => _firstPregnancy = values.first);
+                },
+              ),
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: GestCareColors.softMint,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Row(
                   children: [
+                    const Icon(Icons.info_outline, color: GestCareColors.deepTeal, size: 18),
+                    const SizedBox(width: 10),
                     Expanded(
-                      child: OutlinedButton(
-                        onPressed: () => Navigator.pop(context),
-                        child: const Text('Voltar'),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: PrimaryButton(
-                        label: 'Proximo',
-                        icon: Icons.arrow_forward,
-                        onPressed: () =>
-                            Navigator.pushNamed(context, '/processing'),
+                      child: Text(
+                        'Seus dados sao usados apenas para personalizar seu acompanhamento. Nao compartilhamos com terceiros.',
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: GestCareColors.textMuted,
+                        ),
                       ),
                     ),
                   ],
                 ),
-              ],
-            ),
+              ),
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.pop(context),
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size.fromHeight(50),
+                      ),
+                      child: const Text('Voltar'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: PrimaryButton(
+                      label: 'Analisar Perfil',
+                      icon: Icons.arrow_forward,
+                      onPressed: _submit,
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ),
         ),
       ),
@@ -3262,19 +3506,72 @@ class _QuestionnaireScreenState extends State<QuestionnaireScreen> {
   }
 }
 
-class ProfileProcessingScreen extends StatelessWidget {
+class ProfileProcessingScreen extends StatefulWidget {
   const ProfileProcessingScreen({super.key});
+
+  @override
+  State<ProfileProcessingScreen> createState() =>
+      _ProfileProcessingScreenState();
+}
+
+class _ProfileProcessingScreenState extends State<ProfileProcessingScreen> {
+  final BackendApi _api = BackendApi();
+  bool _hasStarted = false;
+  String? _errorMessage;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_hasStarted) {
+      _hasStarted = true;
+      _runClassification();
+    }
+  }
+
+  Future<void> _runClassification() async {
+    final args = ModalRoute.of(context)?.settings.arguments;
+    final token = AppSession.token;
+
+    if (token == null || args == null) {
+      _navigateToResult(isAlert: false, result: null);
+      return;
+    }
+
+    final data = args as Map<String, dynamic>;
+
+    try {
+      final result = await _api.classify(
+        token: token,
+        weight: (data['weight'] as num).toDouble(),
+        height: (data['height'] as num).toDouble(),
+        imcPreGestacional: (data['imcPreGestacional'] as num).toDouble(),
+        racaCor: data['racaCor'] as int,
+        escolaridade: data['escolaridade'] as int,
+      );
+      if (!mounted) return;
+      _navigateToResult(isAlert: result.isAlert, result: result);
+    } on ApiClientException catch (e) {
+      if (!mounted) return;
+      // Endpoint ainda nao implementado no backend: exibe erro e oferece continuar
+      setState(() => _errorMessage = e.message);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _errorMessage = 'Nao foi possivel classificar o perfil. Tente novamente.');
+    }
+  }
+
+  void _navigateToResult({required bool isAlert, required ClassificationResult? result}) {
+    final route = isAlert ? '/high-alert' : '/safe-path';
+    Navigator.pushReplacementNamed(context, route, arguments: result);
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('SereneSanctuary'),
+        title: const Text('Maternar'),
         actions: const [
-          Padding(
-            padding: EdgeInsets.only(right: 12),
-            child: Icon(Icons.close),
-          ),
+          Padding(padding: EdgeInsets.only(right: 12), child: Icon(Icons.close)),
         ],
       ),
       body: SafeArea(
@@ -3296,11 +3593,7 @@ class ProfileProcessingScreen extends StatelessWidget {
                     ),
                   ],
                 ),
-                child: const Icon(
-                  Icons.favorite,
-                  color: Colors.white,
-                  size: 50,
-                ),
+                child: const Icon(Icons.favorite, color: Colors.white, size: 50),
               ),
               const SizedBox(height: 24),
               Text(
@@ -3321,41 +3614,49 @@ class ProfileProcessingScreen extends StatelessWidget {
               const SizedBox(height: 22),
               const DotLoader(),
               const SizedBox(height: 12),
-              const LinearProgressIndicator(
-                value: 0.68,
+              LinearProgressIndicator(
+                value: _errorMessage != null ? 0 : null,
                 minHeight: 6,
-                borderRadius: BorderRadius.all(Radius.circular(8)),
-                color: GestCareColors.deepTeal,
+                borderRadius: const BorderRadius.all(Radius.circular(8)),
+                color: _errorMessage != null
+                    ? GestCareColors.coral
+                    : GestCareColors.deepTeal,
               ),
               const SizedBox(height: 8),
               Text(
-                'PROCESSANDO',
+                _errorMessage != null ? 'AGUARDANDO' : 'PROCESSANDO',
                 style: Theme.of(context).textTheme.labelMedium?.copyWith(
                   color: GestCareColors.textMuted,
                   letterSpacing: 1.2,
                 ),
               ),
               const Spacer(),
-              Container(
-                height: 120,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(20),
-                  color: const Color(0xFFE6ECE9),
+              if (_errorMessage != null) ...[
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFE8DA),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.info_outline, color: GestCareColors.coral),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          _errorMessage!,
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              const SizedBox(height: 20),
-              PrimaryButton(
-                label: 'Ver Resultado Seguro',
-                onPressed: () => Navigator.pushNamed(context, '/safe-path'),
-              ),
-              const SizedBox(height: 10),
-              OutlinedButton(
-                onPressed: () => Navigator.pushNamed(context, '/high-alert'),
-                style: OutlinedButton.styleFrom(
-                  minimumSize: const Size.fromHeight(50),
+                const SizedBox(height: 16),
+                PrimaryButton(
+                  label: 'Ver Resultado Padrao',
+                  onPressed: () => _navigateToResult(isAlert: false, result: null),
                 ),
-                child: const Text('Ver Resultado de Atencao'),
-              ),
+              ],
             ],
           ),
         ),
@@ -3367,22 +3668,30 @@ class ProfileProcessingScreen extends StatelessWidget {
 class SafePathResultScreen extends StatelessWidget {
   const SafePathResultScreen({super.key});
 
+  static const List<String> _defaultTips = [
+    'Ritmo de hidratacao: mantenha consumo de agua constante para o bem-estar.',
+    'Pausas de descanso: reserve pequenos periodos durante o dia para recuperar energia.',
+    'Suplementacao ativa: siga o plano vitaminico recomendado no pre-natal.',
+  ];
+
   @override
   Widget build(BuildContext context) {
-    return const ResultTemplate(
+    final result =
+        ModalRoute.of(context)?.settings.arguments as ClassificationResult?;
+    final tips = (result?.recomendacoes.isNotEmpty ?? false)
+        ? result!.recomendacoes
+        : _defaultTips;
+
+    return ResultTemplate(
       title: 'Tudo pronto! Seu perfil esta definido.',
       subtitle:
           'Uma jornada de cuidado e serenidade comeca agora para voce e seu bebe.',
-      badgeTitle: 'Caminho Seguro',
-      badgeDescription: 'Parabens pelo otimo acompanhamento da sua gestacao!',
+      badgeTitle: result?.clusterNomeApp ?? 'Caminho Seguro',
+      badgeDescription: 'Parabens pelo acompanhamento da sua gestacao!',
       actionLabel: 'Ir para o Meu Painel',
       actionRoute: '/home',
       isAlert: false,
-      tips: [
-        'Ritmo de hidratacao: mantenha consumo de agua constante para o bem-estar.',
-        'Pausas de descanso: reserve pequenos periodos durante o dia para recuperar energia.',
-        'Suplementacao ativa: siga o plano vitaminico recomendado no pre-natal.',
-      ],
+      tips: tips,
     );
   }
 }
@@ -3390,22 +3699,30 @@ class SafePathResultScreen extends StatelessWidget {
 class HighAlertResultScreen extends StatelessWidget {
   const HighAlertResultScreen({super.key});
 
+  static const List<String> _defaultTips = [
+    'Monitore sua pressao arterial diariamente e anote em diario de saude.',
+    'Fique atenta a inchacos repentinos nas maos e no rosto.',
+    'Mantenha contato da sua obstetra e da rede de apoio sempre a mao.',
+  ];
+
   @override
   Widget build(BuildContext context) {
-    return const ResultTemplate(
+    final result =
+        ModalRoute.of(context)?.settings.arguments as ClassificationResult?;
+    final tips = (result?.recomendacoes.isNotEmpty ?? false)
+        ? result!.recomendacoes
+        : _defaultTips;
+
+    return ResultTemplate(
       title: 'Tudo pronto! Seu perfil esta definido.',
       subtitle: '',
-      badgeTitle: 'Atencao Redobrada',
+      badgeTitle: result?.clusterNomeApp ?? 'Atencao Redobrada',
       badgeDescription:
           'Sua gestacao precisa de um pouco mais de cuidado. Estamos aqui para ajudar.',
       actionLabel: 'Entrar em Contato com a Rede de Apoio',
       actionRoute: '/home',
       isAlert: true,
-      tips: [
-        'Monitore sua pressao arterial diariamente e anote em diario de saude.',
-        'Fique atenta a inchacos repentinos nas maos e no rosto.',
-        'Mantenha contato da sua obstetra e da rede de apoio sempre a mao.',
-      ],
+      tips: tips,
     );
   }
 }

@@ -31,6 +31,8 @@ describe('UserController', () => {
         password: '123',
         zipCode: '14400-000',
         birthDate: new Date('1995-01-01'),
+        raceColor: 4,
+        educationLevel: 3,
       };
 
       userServiceMock.create.mockResolvedValue({

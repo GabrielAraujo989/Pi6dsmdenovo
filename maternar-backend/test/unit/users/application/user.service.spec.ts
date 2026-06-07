@@ -41,6 +41,8 @@ describe('UserService', () => {
       password: 'password123',
       zipCode: '12345-678',
       birthDate: new Date('1990-01-01'),
+      raceColor: 4,
+      educationLevel: 3,
     };
 
     it('should throw a ConflictException if the email is already registered', async () => {
@@ -111,6 +113,8 @@ describe('UserService', () => {
           password: 'mockedHash',
           zipCode: '12345678',
           birthDate: new Date(mockUserDto.birthDate),
+          educationLevel: 3,
+          raceColor: 4,
           location: {
             create: {
               city: 'São Paulo',
@@ -158,6 +162,8 @@ describe('UserService', () => {
           password: 'mockedHash',
           zipCode: '12345678',
           birthDate: new Date(mockUserDto.birthDate),
+          educationLevel: 3,
+          raceColor: 4,
         },
       });
 
@@ -228,14 +234,16 @@ describe('UserService', () => {
         password: 'hashed-password-123',
         phone: null,
         height: null,
-        weight: null,
+        preGestationalWeight: null,
         previousPregnancies: null,
-        educationLevel: null,
+        educationLevel: 3,
+        raceColor: 4,
         zipCode: '12345678',
         hadPreviousComplication: null,
         birthDate: mockDate,
         createdAt: mockDate,
-      } as User;
+        updatedAt: mockDate,
+      } as unknown as User;
 
       prismaMock.user.findUnique.mockResolvedValue(mockUser);
 
@@ -255,13 +263,15 @@ describe('UserService', () => {
         email: 'ana@example.com',
         phone: null,
         height: null,
-        weight: null,
+        preGestationalWeight: null,
         previousPregnancies: null,
-        educationLevel: null,
+        educationLevel: 3,
+        raceColor: 4,
         zipCode: '12345678',
         hadPreviousComplication: null,
         birthDate: mockDate,
         createdAt: mockDate,
+        updatedAt: mockDate,
       });
     });
   });

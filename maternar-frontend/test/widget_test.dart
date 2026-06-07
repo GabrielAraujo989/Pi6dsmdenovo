@@ -58,8 +58,10 @@ void main() {
     await _setLargeViewport(tester);
 
     await tester.pumpWidget(
-      const MaterialApp(
-        home: HomeDashboardScreen(dataSource: _FakeHomeDashboardDataSource()),
+      MaterialApp(
+        home: HomeDashboardScreen(
+          dataSource: const _FakeHomeDashboardDataSource(),
+        ),
       ),
     );
     await tester.pumpAndSettle();
@@ -84,7 +86,7 @@ void main() {
 
     await tester.pumpWidget(const MaterialApp(home: BabyWeekPlannerScreen()));
 
-    expect(find.textContaining('Voce esta na'), findsOneWidget);
+    expect(find.textContaining('Voce esta com'), findsOneWidget);
     expect(find.text('Suas tarefas da semana'), findsOneWidget);
     expect(find.byType(Slider), findsOneWidget);
   });
